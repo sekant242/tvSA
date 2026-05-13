@@ -82,7 +82,6 @@
     }
 
     function openDevLog() {
-        // Удаляем старое окно, если уже было открыто, чтобы обновить содержимое
         const old = document.querySelector('.devlog-activity');
         if (old) old.remove();
 
@@ -104,9 +103,11 @@
 
         const textarea = document.createElement('textarea');
         textarea.readOnly = true;
+        // ----- СТИЛИ С ГОРИЗОНТАЛЬНОЙ ПРОКРУТКОЙ -----
         textarea.style.cssText = 'flex:1;width:100%;background:#000;color:#0f0;' +
             'font-family:monospace;font-size:13px;border:none;outline:none;' +
-            'resize:none;padding:10px;white-space:pre-wrap;word-break:break-all;';
+            'resize:none;padding:10px;' +
+            'white-space:pre;word-break:normal;overflow-x:auto;';  // <-- изменения
         window._devLogTextArea = textarea;
         updateTextArea(textarea);
 
@@ -140,7 +141,6 @@
         document.body.appendChild(container);
     }
 
-    // Дожидаемся Lampa
     function waitForLampa(callback) {
         if (window.Lampa && Lampa.Component) {
             callback();
@@ -155,7 +155,6 @@
     }
 
     waitForLampa(() => {
-        // Добавляем кнопку в интерфейс (рядом с поиском или в правый нижний угол)
         const fab = document.createElement('div');
         fab.id = 'devlog-fab';
         fab.innerHTML = 'LOG';
@@ -167,7 +166,6 @@
         fab.addEventListener('click', openDevLog);
         document.body.appendChild(fab);
 
-        // Попробуем добавить в боковое меню (если сработает)
         try {
             Lampa.Menu.add('plugins', {
                 title: 'Dev Log',
