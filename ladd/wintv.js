@@ -1,26 +1,22 @@
-/**
- * Плагин "Windows-лаунчер" для Lampa
- * Версия 1.0
- */
-
 (function () {
     'use strict';
 
-    // Ожидаем готовность ядра Lampa
-    Lampa.Listener.follow('app', function (e) {
-        if (e.name === 'ready') {
-            initWindowsLauncher();
-        }
-    });
-
-    function initWindowsLauncher() {
-        // Проверяем, не был ли уже создан наш интерфейс
+    // Функция инициализации лаунчера
+    function startLauncher() {
         if (document.getElementById('win-launcher')) return;
 
-        // Скрываем стандартный домашний экран Lampa (он всё равно будет под нашим)
+        // Проверяем, что Lampa и Storage доступны
+        if (typeof Lampa === 'undefined' || !Lampa.Storage) {
+            console.error('Lampa API не найден');
+            return;
+        }
+
+        // Уведомление для отладки (можно закомментировать)
+        Lampa.Noty.show('Win Launcher запущен', {console: true});
+
+        // Стили
         const style = document.createElement('style');
         style.textContent = `
-            /* Основные стили лаунчера */
             #win-launcher {
                 position: fixed;
                 top: 0; left: 0;
@@ -75,28 +71,20 @@
                 background: rgba(50, 50, 50, 0.9);
                 box-shadow: 0 0 20px var(--accent, #2b8cff);
             }
-            .win-tile-icon {
-                font-size: 44px;
-                margin-bottom: 8px;
-            }
-
+            .win-tile-icon { font-size: 44px; margin-bottom: 8px; }
             #win-clock {
                 position: absolute;
-                top: 30px;
-                right: 40px;
+                top: 30px; right: 40px;
                 z-index: 5;
                 font-size: 28px;
                 font-weight: 300;
                 text-shadow: 0 0 10px rgba(0,0,0,0.5);
             }
-
             #start-button {
                 position: absolute;
-                bottom: 30px;
-                left: 30px;
+                bottom: 30px; left: 30px;
                 z-index: 5;
-                width: 56px;
-                height: 56px;
+                width: 56px; height: 56px;
                 background: var(--accent, #2b8cff);
                 border-radius: 14px;
                 display: flex;
@@ -107,14 +95,10 @@
                 cursor: pointer;
                 transition: background 0.3s;
             }
-            #start-button:focus {
-                outline: 3px solid #fff;
-            }
-
+            #start-button:focus { outline: 3px solid #fff; }
             #start-menu {
                 position: absolute;
-                bottom: 100px;
-                left: 30px;
+                bottom: 100px; left: 30px;
                 background: rgba(20, 20, 20, 0.9);
                 backdrop-filter: blur(25px);
                 border-radius: 14px;
@@ -177,10 +161,11 @@
         let winConfig = Lampa.Storage.get('win_theme') || {};
         applyConfig(winConfig);
 
-        // Обновление часов
+        // Часы
         function updateClock() {
             const now = new Date();
-            document.getElementById('win-clock').textContent =
+            const clock = document.getElementById('win-clock');
+            if (clock) clock.textContent =
                 now.getHours().toString().padStart(2, '0') + ':' +
                 now.getMinutes().toString().padStart(2, '0');
         }
@@ -188,33 +173,32 @@
         setInterval(updateClock, 60000);
 
         // Логика фокуса и навигации
-        let currentMenu = 'tiles'; // 'tiles', 'start'
+        let currentMenu = 'tiles';
         const tiles = Array.from(document.querySelectorAll('.win-tile'));
         const startItems = Array.from(document.querySelectorAll('.start-item'));
         const startButton = document.getElementById('start-button');
         const startMenu = document.getElementById('start-menu');
 
-        function setFocus(elements, index) {
-            elements.forEach(el => el.blur());
-            if (elements.length > 0) {
-                elements[Math.min(Math.max(index, 0), elements.length - 1)].focus();
-            }
-        }
-
         let tileFocusIndex = 0;
         let startFocusIndex = 0;
 
-        // Начальный фокус на первой плитке
+        function setFocus(elements, index) {
+            elements.forEach(el => el.blur());
+            if (elements.length > 0) {
+                const i = Math.min(Math.max(index, 0), elements.length - 1);
+                elements[i].focus();
+            }
+        }
+
         if (tiles.length) tiles[0].focus();
 
-        // Обработчик клавиш
         document.addEventListener('keydown', function (e) {
             if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' ||
                 e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                 e.preventDefault();
 
                 if (currentMenu === 'tiles') {
-                    const cols = 3; // фиксировано 3 плитки в строке
+                    const cols = 3;
                     if (e.key === 'ArrowRight') tileFocusIndex = (tileFocusIndex + 1) % tiles.length;
                     else if (e.key === 'ArrowLeft') tileFocusIndex = (tileFocusIndex - 1 + tiles.length) % tiles.length;
                     else if (e.key === 'ArrowDown') tileFocusIndex = (tileFocusIndex + cols) % tiles.length;
@@ -235,35 +219,28 @@
                 }
                 e.preventDefault();
             } else if (e.key === 'Backspace') {
-                // Выход из меню Пуск или возврат в лаунчер
                 if (currentMenu === 'start') {
                     closeStartMenu();
                     e.preventDefault();
                 } else {
-                    // Попытка вернуться с других экранов Lampa
-                    if (Lampa.Activity.active) {
+                    if (typeof Lampa.Activity !== 'undefined' && Lampa.Activity.active) {
                         Lampa.Activity.back();
                         e.preventDefault();
                     }
                 }
             } else if (e.key === 'm' || e.key === 'M') {
-                // Кнопка Menu на пульте (часто M) — переключение меню Пуск
                 toggleStartMenu();
                 e.preventDefault();
             }
         });
 
-        // Клик для мыши (удобно при разработке)
         startButton.addEventListener('click', toggleStartMenu);
-        tiles.forEach(tile => tile.addEventListener('click', () => handleAction(tile.dataset.action)));
-        startItems.forEach(item => item.addEventListener('click', () => handleAction(item.dataset.action)));
+        tiles.forEach(t => t.addEventListener('click', () => handleAction(t.dataset.action)));
+        startItems.forEach(i => i.addEventListener('click', () => handleAction(i.dataset.action)));
 
         function toggleStartMenu() {
-            if (currentMenu === 'start') {
-                closeStartMenu();
-            } else {
-                openStartMenu();
-            }
+            if (currentMenu === 'start') closeStartMenu();
+            else openStartMenu();
         }
 
         function openStartMenu() {
@@ -284,41 +261,42 @@
                 openThemeSettings();
                 return;
             }
-
             closeStartMenu();
-            // Снимаем фокус, чтобы не мешал
             document.activeElement?.blur();
 
-            // Открываем разделы Lampa
-            switch (action) {
-                case 'movies':
-                    Lampa.Activity.push({ url: '', title: 'Фильмы', component: 'category_full', page: 1 });
-                    break;
-                case 'series':
-                    Lampa.Activity.push({ url: '', title: 'Сериалы', component: 'category_full', page: 1 });
-                    break;
-                case 'search':
-                    Lampa.Activity.push({ url: '', title: 'Поиск', component: 'search', page: 1 });
-                    break;
-                case 'bookmarks':
-                    Lampa.Activity.push({ url: '', title: 'Избранное', component: 'bookmarks', page: 1 });
-                    break;
-                case 'settings':
-                    Lampa.Activity.push({ url: '', title: 'Настройки', component: 'settings', page: 1 });
-                    break;
+            // Открываем разделы
+            try {
+                switch (action) {
+                    case 'movies':
+                        Lampa.Activity.push({ url: '', title: 'Фильмы', component: 'category_full', page: 1 });
+                        break;
+                    case 'series':
+                        Lampa.Activity.push({ url: '', title: 'Сериалы', component: 'category_full', page: 1 });
+                        break;
+                    case 'search':
+                        Lampa.Activity.push({ url: '', title: 'Поиск', component: 'search', page: 1 });
+                        break;
+                    case 'bookmarks':
+                        Lampa.Activity.push({ url: '', title: 'Избранное', component: 'bookmarks', page: 1 });
+                        break;
+                    case 'settings':
+                        Lampa.Activity.push({ url: '', title: 'Настройки', component: 'settings', page: 1 });
+                        break;
+                }
+            } catch (err) {
+                console.error('Ошибка открытия раздела:', err);
             }
         }
 
-        // Настройки темы (упрощённо)
         function openThemeSettings() {
             closeStartMenu();
-            const accent = prompt('Акцентный цвет (hex, например #2b8cff):', winConfig.accent || '#2b8cff');
+            const accent = prompt('Акцентный цвет (hex):', winConfig.accent || '#2b8cff');
             if (accent) {
                 winConfig.accent = accent;
                 document.documentElement.style.setProperty('--accent', accent);
                 Lampa.Storage.set('win_theme', winConfig);
             }
-            const bgUrl = prompt('URL обоев (или оставьте пустым):', winConfig.bgUrl || '');
+            const bgUrl = prompt('URL обоев (или пусто):', winConfig.bgUrl || '');
             if (bgUrl !== null) {
                 winConfig.bgUrl = bgUrl;
                 document.getElementById('win-desktop-bg').style.backgroundImage = bgUrl ? `url(${bgUrl})` : 'none';
@@ -331,23 +309,30 @@
                 document.documentElement.style.setProperty('--accent', cfg.accent);
             }
             if (cfg.bgUrl) {
-                document.getElementById('win-desktop-bg').style.backgroundImage = `url(${cfg.bgUrl})`;
+                const bg = document.getElementById('win-desktop-bg');
+                if (bg) bg.style.backgroundImage = `url(${cfg.bgUrl})`;
             }
         }
 
-        // Возврат на домашний экран, если пользователь вышел из раздела
+        // Скрываем лаунчер при открытии плеера
         Lampa.Listener.follow('activity', function (e) {
-            if (e.name === 'pop') {
-                // Можно показать лаунчер, если он скрыт (но он всегда наверху)
+            const win = document.getElementById('win-launcher');
+            if (!win) return;
+            if (e.name === 'push' && e.activity?.component === 'player') {
+                win.style.display = 'none';
+            } else if (e.name === 'pop') {
+                win.style.display = '';
             }
         });
+    }
 
-        // Обработчик скрытия лаунчера при переходе в плеер (чтобы не мешал просмотру)
-        Lampa.Listener.follow('activity', function (e) {
-            if (e.name === 'push' && e.activity?.component === 'player') {
-                document.getElementById('win-launcher').style.display = 'none';
-            } else if (e.name === 'pop') {
-                document.getElementById('win-launcher').style.display = '';
+    // Пытаемся запустить лаунчер, когда Lampa готова, или сразу, если уже готова
+    if (typeof Lampa !== 'undefined' && Lampa.App && Lampa.App.ready) {
+        startLauncher();
+    } else {
+        Lampa.Listener.follow('app', function (e) {
+            if (e.name === 'ready') {
+                startLauncher();
             }
         });
     }
