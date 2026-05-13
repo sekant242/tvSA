@@ -3,22 +3,59 @@
 
     const pluginName = 'start_menu_skin';
 
+    // ====================== ВИЗУАЛЬНЫЙ ЛОГГЕР ======================
+    function createLogPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'lampa-log-panel';
+        panel.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            width: 280px;
+            max-height: 200px;
+            background: rgba(0,0,0,0.85);
+            color: #0f0;
+            font: 12px monospace;
+            padding: 8px;
+            border-radius: 6px;
+            z-index: 999999;
+            overflow-y: auto;
+            pointer-events: none;
+            white-space: pre-wrap;
+            word-break: break-all;
+        `;
+        document.body.appendChild(panel);
+        return panel;
+    }
+
+    function log(message, isError = false) {
+        let panel = document.getElementById('lampa-log-panel');
+        if (!panel) {
+            panel = createLogPanel();
+        }
+        const time = new Date().toLocaleTimeString();
+        const prefix = isError ? '❌' : '✅';
+        const line = document.createElement('div');
+        line.textContent = `${prefix} [${time}] ${message}`;
+        line.style.color = isError ? '#ff5555' : '#55ff55';
+        panel.appendChild(line);
+        panel.scrollTop = panel.scrollHeight;
+    }
+
+    // ====================== ОСНОВНАЯ ЛОГИКА ======================
     function applySkin(menuElement) {
         if (!menuElement) {
-            console.error(`[${pluginName}] Меню не найдено!`);
+            log('Меню не найдено, скин не применён', true);
             return;
         }
 
-        console.log(`[${pluginName}] Меню найдено:`, menuElement);
-
-        // Удаляем старые стили, если есть
-        const old = document.getElementById('start-menu-skin-styles');
-        if (old) old.remove();
+        log(`Найдено меню: ${menuElement.tagName}.${menuElement.className}`);
+        const oldStyle = document.getElementById('start-menu-skin-styles');
+        if (oldStyle) oldStyle.remove();
 
         const style = document.createElement('style');
         style.id = 'start-menu-skin-styles';
         style.textContent = `
-            /* Применяем стили непосредственно к найденному элементу */
             ${menuElement.tagName.toLowerCase()}.${menuElement.className.replace(/\s+/g, '.')} {
                 background: #c0c0c0 !important;
                 border: 2px solid;
@@ -31,8 +68,6 @@
                 position: relative !important;
                 overflow: hidden !important;
             }
-
-            /* Левая плашка */
             ${menuElement.tagName.toLowerCase()}.${menuElement.className.replace(/\s+/g, '.')}::before {
                 content: "LAMPA";
                 position: absolute;
@@ -55,13 +90,9 @@
                 text-transform: uppercase;
                 z-index: 1;
             }
-
-            /* Сдвиг содержимого */
             ${menuElement.tagName.toLowerCase()}.${menuElement.className.replace(/\s+/g, '.')} > * {
                 margin-left: 30px !important;
             }
-
-            /* Пункты меню */
             .menu__item, .sidebar-item, .lampa-menu-item, [class*="menu"] [class*="item"] {
                 padding: 6px 10px !important;
                 cursor: pointer !important;
@@ -76,8 +107,9 @@
             }
         `;
         document.head.appendChild(style);
+        log('CSS-стили меню Пуск внедрены');
 
-        // Меняем кнопку "Пуск"
+        // Меняем кнопку открытия меню
         const menuButton = document.querySelector('.header__menu-btn, .menu-toggle, .open-menu, [class*="burger"], [class*="menu-button"]');
         if (menuButton) {
             menuButton.innerHTML = '<span style="font-weight:bold; margin-right:4px;"><img src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3E%3Cpath fill=\'white\' d=\'M0 0h7v7H0zM9 0h7v7H9zM0 9h7v7H0zM9 9h7v7H9z\'/%3E%3C/svg%3E" style="width:16px; height:16px; vertical-align:middle;" alt="Пуск"></span>Пуск';
@@ -91,26 +123,30 @@
                 padding: '4px 10px',
                 cursor: 'pointer'
             });
+            log('Кнопка "Пуск" обновлена');
+        } else {
+            log('Кнопка меню не найдена — проверьте селектор', true);
         }
     }
 
     function init() {
-        // Список возможных селекторов для меню (дополните своими)
+        log('Плагин start_menu_skin активирован. Ищу меню...');
+
         const selectors = [
             '.menu',
             '.sidebar',
             '.lampa-menu',
             '.main-menu',
             '.main__menu',
-            '.lampa__menu',
-            '[class*="menu"]:not([class*="context"])'  // осторожно, может захватить лишнее
+            '.lampa__menu'
         ];
 
         let menuElement = null;
         for (const sel of selectors) {
             const el = document.querySelector(sel);
-            if (el && el.offsetParent !== null) { // только видимые элементы
+            if (el && el.offsetParent !== null) {
                 menuElement = el;
+                log(`Меню найдено по селектору: ${sel}`);
                 break;
             }
         }
@@ -118,37 +154,38 @@
         if (menuElement) {
             applySkin(menuElement);
         } else {
-            // Возможно меню ещё не отрендерено — ждём
-            console.warn(`[${pluginName}] Меню не найдено сразу. Ждём 2 секунды...`);
+            log('Меню не обнаружено в DOM. Жду 2 секунды...', true);
             setTimeout(() => {
                 for (const sel of selectors) {
                     const el = document.querySelector(sel);
                     if (el && el.offsetParent !== null) {
+                        log(`Меню появилось по селектору: ${sel}`);
                         applySkin(el);
                         return;
                     }
                 }
-                console.error(`[${pluginName}] Меню так и не найдено. Попробуйте добавить селектор вручную.`);
+                log('Меню так и не появилось. Добавьте правильный селектор в код плагина.', true);
+                log('Проверьте, открыто ли меню в момент загрузки плагина.', false);
             }, 2000);
         }
     }
 
-    // Регистрация
-    if (window.Lampa && window.Lampa.Plugins) {
-        Lampa.Plugins.add(pluginName, init);
-    } else {
-        window.addEventListener('load', () => {
-            if (window.Lampa && window.Lampa.Plugins) {
-                Lampa.Plugins.add(pluginName, init);
-            } else {
-                setTimeout(() => {
-                    if (window.Lampa && window.Lampa.Plugins) {
-                        Lampa.Plugins.add(pluginName, init);
-                    } else {
-                        console.error(`[${pluginName}] Lampa API не найден.`);
-                    }
-                }, 3000);
-            }
-        });
+    // Регистрация в Lampa
+    try {
+        if (window.Lampa && window.Lampa.Plugins) {
+            Lampa.Plugins.add(pluginName, init);
+            log('Плагин зарегистрирован в Lampa API');
+        } else {
+            window.addEventListener('load', () => {
+                if (window.Lampa && window.Lampa.Plugins) {
+                    Lampa.Plugins.add(pluginName, init);
+                    log('Плагин зарегистрирован после загрузки страницы');
+                } else {
+                    log('Lampa API не найден! Убедитесь, что плагин установлен в актуальную версию Lampa.', true);
+                }
+            });
+        }
+    } catch (e) {
+        log(`Критическая ошибка при регистрации: ${e.message}`, true);
     }
 })();
