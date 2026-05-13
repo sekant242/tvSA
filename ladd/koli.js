@@ -1,222 +1,177 @@
-(function() {
+/**
+ * start-menu-skin.lampa.js
+ * Глобальный рескин главного меню Lampa в стиле меню "Пуск" Windows 95/XP.
+ * Версия 1.0
+ */
+(function () {
     'use strict';
 
-    // Ждём готовности Lampa
-    function waitForLampa(cb) {
-        if (window.Lampa && Lampa.Storage && Lampa.Activity) {
-            cb();
-        } else {
-            setTimeout(() => waitForLampa(cb), 100);
-        }
-    }
+    const pluginName = 'start_menu_skin';
 
-    // ===== Стили в духе Kodi =====
-    function addStyles() {
+    // Основная функция, вызываемая при загрузке плагина
+    function init() {
+        // ========== 1. ВНЕДРЕНИЕ ГЛОБАЛЬНЫХ CSS-СТИЛЕЙ ==========
+        // Имитируем классическое меню Пуск:
+        // - Серый фон
+        // - Левая тёмно-синяя/чёрная полоса с вертикальной надписью
+        // - Объёмная рамка (эффект выпуклости)
+        // - Стилизация пунктов меню
+
         const style = document.createElement('style');
+        style.id = 'start-menu-skin-styles';
         style.textContent = `
-            /* Полноэкранная сетка */
-            .kodi-library-app {
-                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                background: #0d0d0d; color: #fff; z-index: 9999; overflow-y: auto;
-                display: flex; flex-direction: column;
+            /* Основной контейнер меню (подставьте актуальный селектор) */
+            .menu,
+            .sidebar,
+            .lampa-menu {
+                background: #c0c0c0 !important;  /* классический серый Windows */
+                border: 2px solid;
+                border-color: #ffffff #808080 #808080 #ffffff !important; /* выпуклая рамка */
+                box-shadow: 2px 2px 10px rgba(0,0,0,0.5) !important;
+                font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif !important;
+                font-size: 14px !important;
+                color: #000 !important;
+                padding: 0 !important;
+                position: relative !important;
+                overflow: hidden !important;
             }
-            .kodi-header {
-                padding: 15px 20px; display: flex; align-items: center;
-                background: rgba(0,0,0,0.7); backdrop-filter: blur(5px);
-                position: sticky; top: 0; z-index: 10;
+
+            /* Левая вертикальная плашка "Windows" (создаётся псевдоэлементом) */
+            .menu::before,
+            .sidebar::before,
+            .lampa-menu::before {
+                content: "LAMPA";  /* или "ПУСК", "START" */
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 30px;
+                background: #000080;  /* тёмно-синий */
+                color: #ffffff;
+                writing-mode: vertical-rl;
+                text-orientation: mixed;
+                font-weight: bold;
+                font-size: 16px;
+                letter-spacing: 2px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 10px 0;
+                box-sizing: border-box;
+                text-transform: uppercase;
+                z-index: 1;
             }
-            .kodi-menu-btn {
-                font-size: 24px; cursor: pointer; margin-right: 20px;
-                background: none; border: none; color: #fff; opacity: 0.8;
-                transition: opacity 0.2s;
+
+            /* Сдвигаем содержимое меню вправо, чтобы освободить место под левую плашку */
+            .menu > *,
+            .sidebar > *,
+            .lampa-menu > * {
+                margin-left: 30px !important;
             }
-            .kodi-menu-btn:hover { opacity: 1; }
-            .kodi-title { font-size: 22px; font-weight: 500; }
-            .kodi-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-                gap: 20px; padding: 20px; margin: 0 auto; width: 100%;
-                max-width: 1400px; box-sizing: border-box;
+
+            /* Стилизация отдельных пунктов меню */
+            .menu__item,
+            .sidebar-item,
+            .lampa-menu-item {
+                padding: 6px 10px !important;
+                cursor: pointer !important;
+                display: flex !important;
+                align-items: center !important;
+                gap: 8px !important;
+                transition: background 0.1s !important;
             }
-            .kodi-tile {
-                border-radius: 8px; overflow: hidden; background: #1a1a1a;
-                cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
-                outline: none;
+            .menu__item:hover,
+            .sidebar-item:hover,
+            .lampa-menu-item:hover {
+                background: #000080 !important;
+                color: #ffffff !important;
             }
-            .kodi-tile:focus {
-                box-shadow: 0 0 0 3px #ffaa00; transform: scale(1.03);
+
+            /* Разделитель между пунктами (по горизонтали) */
+            .menu__separator,
+            .sidebar-separator {
+                height: 1px;
+                background: #808080;
+                margin: 4px 0;
+                box-shadow: 0 1px 0 #ffffff;
             }
-            .kodi-tile img {
-                width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block;
+
+            /* Нижняя кнопка "Выключение" (опционально) */
+            .menu__footer {
+                border-top: 1px solid #808080;
+                padding: 6px;
+                background: #c0c0c0;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                font-weight: bold;
             }
-            .kodi-tile-title {
-                padding: 10px; font-size: 14px; text-align: center;
-                white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-            }
-            .kodi-empty {
-                text-align: center; padding: 40px 20px; color: #888; font-size: 18px;
-            }
-            /* Адаптация для ТВ: убираем скроллбар если нужно */
-            .kodi-library-app::-webkit-scrollbar { width: 6px; }
-            .kodi-library-app::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
         `;
         document.head.appendChild(style);
-    }
 
-    // ===== Построение HTML-сетки =====
-    function buildGrid(items) {
-        if (!items || !items.length) {
-            return '<div class="kodi-empty">Ваше избранное пусто. Добавьте фильмы или сериалы в избранное, и они появятся здесь.</div>';
+        // ========== 2. ДОБАВЛЕНИЕ КНОПКИ "ПУСК" (если её нет) ==========
+        // Можно динамически создать кнопку, похожую на кнопку Пуск.
+        // Для примера просто меняем иконку и текст существующей кнопки меню.
+        // Селектор кнопки, открывающей меню, предположительно:
+        const menuButton = document.querySelector('.header__menu-btn, .menu-toggle, .open-menu');
+        if (menuButton) {
+            // Меняем внутренности кнопки на логотип Windows и текст
+            menuButton.innerHTML = '<span style="font-weight:bold; margin-right:4px;"><img src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3E%3Cpath fill=\'white\' d=\'M0 0h7v7H0zM9 0h7v7H9zM0 9h7v7H0zM9 9h7v7H9z\'/%3E%3C/svg%3E" style="width:16px; height:16px; vertical-align:middle;" alt="Пуск"></span>Пуск';
+            menuButton.style.background = '#000080';
+            menuButton.style.color = '#fff';
+            menuButton.style.border = '2px solid';
+            menuButton.style.borderColor = '#ffffff #808080 #808080 #ffffff';
+            menuButton.style.fontFamily = '"MS Sans Serif", Tahoma, sans-serif';
+            menuButton.style.fontSize = '14px';
+            menuButton.style.padding = '4px 10px';
+            menuButton.style.cursor = 'pointer';
         }
-        let html = '<div class="kodi-grid">';
-        items.forEach((item, index) => {
-            const poster = item.poster || 'https://via.placeholder.com/180x270?text=No+Image';
-            const title = item.title || item.name || 'Без названия';
-            html += `
-                <div class="kodi-tile" tabindex="0" data-id="${item.id}" data-type="${item.type}" data-index="${index}">
-                    <img src="${poster}" alt="${title}" />
-                    <div class="kodi-tile-title">${title}</div>
-                </div>
-            `;
-        });
-        html += '</div>';
-        return html;
-    }
 
-    // ===== Навигация стрелками (для ТВ/пульта) =====
-    function enableGridNavigation(container) {
-        const tiles = Array.from(container.querySelectorAll('.kodi-tile'));
-        if (!tiles.length) return;
-
-        // Определяем количество колонок
-        const firstTile = tiles[0];
-        const tileWidth = firstTile.offsetWidth;
-        const grid = container.querySelector('.kodi-grid');
-        if (!grid) return;
-        const gridStyle = window.getComputedStyle(grid);
-        const columns = parseInt(gridStyle.gridTemplateColumns.split(' ').length) || 
-                        Math.floor(grid.offsetWidth / (tileWidth + 20)); // 20 = gap
-
-        tiles.forEach((tile, i) => {
-            tile.addEventListener('keydown', function(e) {
-                const row = Math.floor(i / columns);
-                const col = i % columns;
-                let nextIndex = i;
-
-                switch(e.key) {
-                    case 'ArrowUp':
-                        if (row > 0) nextIndex = i - columns;
-                        else return;
-                        break;
-                    case 'ArrowDown':
-                        if (row < Math.floor((tiles.length-1) / columns)) nextIndex = i + columns;
-                        else return;
-                        break;
-                    case 'ArrowLeft':
-                        if (col > 0) nextIndex = i - 1;
-                        else return;
-                        break;
-                    case 'ArrowRight':
-                        if (col < columns - 1 && i + 1 < tiles.length) nextIndex = i + 1;
-                        else return;
-                        break;
-                    case 'Enter':
-                        this.click();
-                        return;
-                    default:
-                        return;
+        // ========== 3. БОНУС: АНИМАЦИЯ РАСКРЫТИЯ КАК В WINDOWS ==========
+        // Добавляем CSS-анимацию, если меню использует класс .open
+        const animStyle = document.createElement('style');
+        animStyle.textContent = `
+            .menu.open,
+            .sidebar.open,
+            .lampa-menu.open {
+                animation: startMenuOpen 0.2s ease-out;
+            }
+            @keyframes startMenuOpen {
+                from {
+                    opacity: 0;
+                    transform: scale(0.9) translateY(-10px);
                 }
-                e.preventDefault();
-                if (tiles[nextIndex]) tiles[nextIndex].focus();
-            });
-        });
-
-        // Автофокус на первом элементе при открытии
-        setTimeout(() => {
-            if (tiles[0]) tiles[0].focus();
-        }, 100);
-    }
-
-    // ===== Показать библиотеку (заменяет главный экран) =====
-    function showLibrary() {
-        // Скрываем оригинальный интерфейс Lampa
-        const lampaRoot = document.getElementById('app') || document.body;
-        // Добавим класс, чтобы скрыть всё, кроме нашего приложения
-        lampaRoot.classList.add('kodi-library-mode');
-        // Создаём контейнер
-        const appDiv = document.createElement('div');
-        appDiv.className = 'kodi-library-app';
-        appDiv.id = 'kodi-library-root';
-
-        // Загружаем избранное
-        let favs = Lampa.Storage.get('bookmarks', []);
-        if (!Array.isArray(favs)) favs = [];
-
-        appDiv.innerHTML = `
-            <div class="kodi-header">
-                <button class="kodi-menu-btn" id="kodi-menu-button" title="Меню">☰</button>
-                <div class="kodi-title">Библиотека</div>
-            </div>
-            <div class="kodi-content">
-                ${buildGrid(favs)}
-            </div>
-        `;
-
-        // Удаляем старый экземпляр, если есть
-        const oldRoot = document.getElementById('kodi-library-root');
-        if (oldRoot) oldRoot.remove();
-        document.body.appendChild(appDiv);
-
-        // Обработчик кликов по плиткам
-        appDiv.querySelectorAll('.kodi-tile').forEach(tile => {
-            tile.addEventListener('click', function() {
-                const id = this.dataset.id;
-                const type = this.dataset.type;
-                if (id && type) {
-                    Lampa.Activity.push({
-                        url: '',
-                        component: 'full_card',
-                        card: { id, type }
-                    });
+                to {
+                    opacity: 1;
+                    transform: scale(1) translateY(0);
                 }
-            });
-        });
-
-        // Кнопка меню — возвращает в стандартное меню Lampa
-        document.getElementById('kodi-menu-button').addEventListener('click', () => {
-            // Удаляем наше приложение
-            const root = document.getElementById('kodi-library-root');
-            if (root) root.remove();
-            // Убираем класс скрытия
-            lampaRoot.classList.remove('kodi-library-mode');
-            // Открываем главную активность Lampa
-            Lampa.Activity.push({ url: '', component: 'main' });
-        });
-
-        // Включаем навигацию стрелками
-        enableGridNavigation(appDiv.querySelector('.kodi-content'));
-
-        // CSS-правило для скрытия оригинального интерфейса
-        const style = document.createElement('style');
-        style.id = 'kodi-hide-lampa-style';
-        style.textContent = `
-            body.kodi-library-mode #app > *:not(#kodi-library-root),
-            body.kodi-library-mode .menu,
-            body.kodi-library-mode .head,
-            body.kodi-library-mode .footer,
-            body.kodi-library-mode .modals { display: none !important; }
+            }
         `;
-        document.head.appendChild(style);
+        document.head.appendChild(animStyle);
+
+        console.log(`[${pluginName}] Меню "Пуск" активировано.`);
     }
 
-    // ===== Инициализация =====
-    waitForLampa(() => {
-        addStyles();
-        // При запуске плагина сразу заменяем интерфейс.
-        // Но нужно дождаться, когда Lampa отрисует главную страницу, чтобы потом её скрыть.
-        // Используем небольшой таймаут, чтобы главный экран успел появиться, а затем скроем.
-        setTimeout(() => {
-            showLibrary();
-        }, 500);
-    });
+    // ========== ЗАПУСК ПЛАГИНА ==========
+    // Дожидаемся готовности Lampa (зависит от версии)
+    if (window.Lampa && window.Lampa.Plugins) {
+        // Современный способ регистрации
+        Lampa.Plugins.add(pluginName, init);
+    } else {
+        // Отложенный запуск, если API ещё не загружен
+        window.addEventListener('load', function () {
+            if (window.Lampa && window.Lampa.Plugins) {
+                Lampa.Plugins.add(pluginName, init);
+            } else {
+                // Если Lampa загружается динамически, пробуем ещё раз
+                setTimeout(function () {
+                    if (window.Lampa && window.Lampa.Plugins) {
+                        Lampa.Plugins.add(pluginName, init);
+                    } else {
+                        console.error(`[${pluginName}] Не удалось найти API Lampa.`);
+                    }
+                }, 3000);
+            }
+        });
+    }
 })();
