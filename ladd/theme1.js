@@ -1,29 +1,23 @@
-// Плагин: Hero-карусель для главной страницы Lampa
+// Плагин: Hero-карусель для главной страницы Lampa (рабочая версия)
 (function() {
     'use strict';
 
-    // Класс компонента, наследующий от Lampa.Emit (как требуется в Lampa)
     var HeroMainComponent = function(object) {
-        // Инициализация
         Lampa.Emit.call(this);
         this.object = object || {};
         this.params = object.params || {};
-        this.allItems = [];      // все карточки (объединённые из всех строк)
+        this.allItems = [];
         this.currentIndex = 0;
         this.html = null;
         this.heroDiv = null;
         this.carouselDiv = null;
         this.carouselInner = null;
-        this.activity = null;    // будет установлено ActivitySlide
+        this.activity = null;
     };
-    // Наследование от Lampa.Emit
     HeroMainComponent.prototype = Object.create(Lampa.Emit.prototype);
     HeroMainComponent.prototype.constructor = HeroMainComponent;
 
-    // Методы, обязательные для компонента Lampa
     HeroMainComponent.prototype.create = function() {
-        var self = this;
-        // Создаём DOM-структуру
         this.html = document.createElement('div');
         this.html.className = 'hero-carousel-container';
         this.heroDiv = document.createElement('div');
@@ -35,8 +29,6 @@
         this.carouselDiv.appendChild(this.carouselInner);
         this.html.appendChild(this.heroDiv);
         this.html.appendChild(this.carouselDiv);
-
-        // Загружаем данные
         this.loadData();
         this.emit('create');
     };
@@ -44,9 +36,7 @@
     HeroMainComponent.prototype.loadData = function() {
         var self = this;
         if (this.activity) this.activity.loader(true);
-        // Используем стандартный API Lampa для получения главной страницы
         Lampa.Api.main(this.object, function(lines) {
-            // lines – массив строк (каждая с полем results)
             self.allItems = [];
             lines.forEach(function(line) {
                 if (line.results && line.results.length) {
@@ -93,9 +83,7 @@
             <div class="hero-card__button selector">Смотреть</div>
         `;
         this.heroDiv.appendChild(overlay);
-        // Загружаем актёров и режиссёра
         this.loadCast(item);
-        // Обработчик кнопки "Смотреть"
         var watchBtn = overlay.querySelector('.hero-card__button');
         if (watchBtn) {
             watchBtn.on('hover:enter', function() {
@@ -114,12 +102,19 @@
     HeroMainComponent.prototype.loadCast = function(item) {
         if (!item.id) return;
         var method = item.name ? 'tv' : 'movie';
-        Lampa.TMDB.get(method + '/' + item.id + '/credits', {}, function(credits) {
-            var actors = credits.cast.slice(0, 3).map(a => a.name).join(', ');
-            var director = (credits.crew.find(c => c.job === 'Director') || {}).name || '';
+        var source = item.source || 'tmdb';
+        var api = Lampa.Api.sources[source];
+        if (!api || !api.get) {
+            console.warn('Api.get not found for source', source);
+            return;
+        }
+        api.get(method + '/' + item.id + '/credits', {}, function(credits) {
+            var actors = (credits.cast || []).slice(0, 3).map(a => a.name).join(', ');
+            var director = (credits.crew || []).find(c => c.job === 'Director');
+            var directorName = director ? director.name : '';
             var metaDiv = this.heroDiv?.querySelector('.hero-card__meta');
             if (metaDiv) {
-                metaDiv.innerHTML = `<span>Режиссёр: ${director}</span> | <span>В ролях: ${actors || '—'}</span>`;
+                metaDiv.innerHTML = `<span>Режиссёр: ${directorName}</span> | <span>В ролях: ${actors || '—'}</span>`;
             }
         }.bind(this), function() {});
     };
@@ -138,25 +133,22 @@
             img.src = Lampa.Api.img(item.poster_path || item.img, 'w200');
             img.onerror = function() { img.src = './img/img_broken.svg'; };
             card.appendChild(img);
-            // Обработка выбора (пульт или мышь)
             card.on('hover:enter', function() {
                 self.setCurrentIndex(idx);
             });
-            this.carouselInner.appendChild(card);
-        }.bind(this));
+            self.carouselInner.appendChild(card);
+        });
     };
 
     HeroMainComponent.prototype.setCurrentIndex = function(newIndex) {
         if (newIndex === this.currentIndex) return;
         this.currentIndex = newIndex;
         this.renderHero(this.allItems[newIndex]);
-        // Обновить классы selected
         var cards = this.carouselInner.querySelectorAll('.strip-card');
         cards.forEach(function(card, i) {
             if (i === newIndex) card.classList.add('selected');
             else card.classList.remove('selected');
         });
-        // Прокрутка карусели, чтобы выбранная карточка была в центре
         var selectedCard = cards[newIndex];
         if (selectedCard) {
             selectedCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -173,10 +165,8 @@
         empty.start();
     };
 
-    // Обязательные методы жизненного цикла
     HeroMainComponent.prototype.start = function() {
         var self = this;
-        // Регистрируем контроллер для навигации по карусели
         Lampa.Controller.add('hero_carousel', {
             toggle: function() {
                 Lampa.Controller.collectionSet(self.carouselInner);
@@ -226,7 +216,6 @@
         return js ? this.html : $(this.html);
     };
 
-    // Добавляем стили (вставляются один раз)
     function addStyles() {
         if (document.getElementById('hero-carousel-styles')) return;
         var style = document.createElement('style');
@@ -350,14 +339,12 @@
         document.head.appendChild(style);
     }
 
-    // Замена компонента main
     function replaceMainComponent() {
         if (Lampa.Component.get('main') === HeroMainComponent) return;
         Lampa.Component.add('main', HeroMainComponent);
         console.log('HeroCarousel: компонент main заменён');
     }
 
-    // Инициализация плагина
     Lampa.Listener.follow('app', function(e) {
         if (e.type === 'ready') {
             addStyles();
