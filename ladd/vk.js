@@ -1,157 +1,139 @@
-(function() {
+/**
+ * Плагин поиска YouTube через NewPipe Extractor
+ * Кнопка появляется в карточке фильма.
+ * Поиск выполняется без API, видео воспроизводятся во встроенном плеере.
+ */
+(function () {
     'use strict';
 
-    Lampa.Listener.follow('full', function(e) {
-        if (e.type !== 'complite') return;
+    // URL CDN с браузерной сборкой NewPipe Extractor
+    const NEWPIPE_CDN = 'https://cdn.jsdelivr.net/npm/newpipe-extractor-js@0.3.3/dist/newpipe-extractor.min.js';
 
-        var $container = e.body;
-        if (!$container || !$container.length) return;
-
-        var $buttonsBlock = $container.find('.full-start-new__buttons');
-        if (!$buttonsBlock.length) return;
-
-        if ($buttonsBlock.find('.plugin-youtube-button').length) return;
-
-        var card = e.object && e.object.card;
-        if (!card) card = e.props && e.props.get('movie');
-        if (!card) return;
-
-        var movieTitle = card.title || card.name || '';
-        // Данные о трейлерах (уже загружены Lampa)
-        var trailersData = e.props && e.props.get('videos');
-        var trailerItems = [];
-
-        if (trailersData && trailersData.results && trailersData.results.length) {
-            trailerItems = trailersData.results.map(function(video) {
-                return {
-                    title: video.name,
-                    subtitle: video.type + (video.official ? ' (Official)' : ''),
-                    url: 'https://www.youtube.com/watch?v=' + video.key,
-                    icon: 'https://img.youtube.com/vi/' + video.key + '/default.jpg',
-                    template: 'selectbox_icon'
-                };
-            });
-        }
-
-        var $button = $('<div class="full-start__button selector plugin-youtube-button">\
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">\
-                <path d="M10 15l5-3-5-3v6zm1-13C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor"/>\
-            </svg>\
-            <span>YouTube</span>\
-        </div>');
-
-        // Показать список видео через Select
-        var showVideoList = function(items, title) {
-            if (!items.length) {
-                Lampa.Noty.show('Видео не найдены');
-                return;
-            }
-            var enabled = Lampa.Controller.enabled().name;
-            Lampa.Select.show({
-                title: title || movieTitle,
-                items: items,
-                onSelect: function(selected) {
-                    Lampa.Controller.toggle(enabled);
-                    if (selected.url) {
-                        Lampa.Player.play({
-                            url: selected.url,
-                            title: selected.title,
-                            youtube: true
-                        });
-                    }
-                },
-                onBack: function() {
-                    Lampa.Controller.toggle(enabled);
-                }
-            });
-        };
-
-        // Поиск видео через Invidious API (альтернатива YouTube API)
-        var searchYouTube = function(query, callback) {
-            // Можно использовать несколько инстансов для надёжности
-            var instances = [
-                'https://invidious.snopyta.org',
-                'https://invidious.iamkate.com',
-                'https://yewtu.be'
-            ];
-            var idx = 0;
-            var trySearch = function() {
-                if (idx >= instances.length) {
-                    callback([]);
-                    return;
-                }
-                var url = instances[idx] + '/api/v1/search?q=' + encodeURIComponent(query) + '&type=video';
-                var req = new Lampa.Reguest();
-                req.silent(url, function(data) {
-                    if (data && data.length) {
-                        var items = data.slice(0, 15).map(function(video) {
-                            return {
-                                title: video.title,
-                                subtitle: video.author,
-                                url: 'https://www.youtube.com/watch?v=' + video.videoId,
-                                icon: video.videoThumbnails && video.videoThumbnails[0] ? video.videoThumbnails[0].url : '',
-                                template: 'selectbox_icon'
-                            };
-                        });
-                        callback(items);
-                    } else {
-                        callback([]);
-                    }
-                }, function() {
-                    idx++;
-                    trySearch();
-                });
-            };
-            trySearch();
-        };
-
-        var showMenu = function() {
-            var enabled = Lampa.Controller.enabled().name;
-            var menuItems = [
-                { title: 'Трейлеры (официальные)', type: 'official' },
-                { title: 'Трейлеры (YouTube)', type: 'trailer' },
-                { title: 'Полный фильм', type: 'full' },
-                { title: 'Обзор / рецензия', type: 'review' }
-            ];
-            Lampa.Select.show({
-                title: movieTitle,
-                items: menuItems,
-                onSelect: function(item) {
-                    Lampa.Controller.toggle(enabled);
-                    if (item.type === 'official') {
-                        showVideoList(trailerItems, 'Официальные трейлеры');
-                    } else if (item.type === 'trailer') {
-                        searchYouTube(movieTitle + ' трейлер', function(items) {
-                            showVideoList(items, 'Трейлеры с YouTube');
-                        });
-                    } else if (item.type === 'full') {
-                        searchYouTube(movieTitle + ' фильм полная версия', function(items) {
-                            showVideoList(items, 'Полные версии фильмов');
-                        });
-                    } else if (item.type === 'review') {
-                        searchYouTube(movieTitle + ' обзор рецензия', function(items) {
-                            showVideoList(items, 'Обзоры и рецензии');
-                        });
-                    } else {
-                        Lampa.Noty.show('Видео не найдены');
-                    }
-                },
-                onBack: function() {
-                    Lampa.Controller.toggle(enabled);
-                }
-            });
-        };
-
-        $button.on('click', function(event) {
-            if (Lampa.DeviceInput && !Lampa.DeviceInput.canClick(event.originalEvent)) return;
-            showMenu();
+    // Загрузка внешнего скрипта
+    function loadScript(url) {
+        return new Promise((resolve, reject) => {
+            if (window.NewPipeExtractor) return resolve(window.NewPipeExtractor);
+            const script = document.createElement('script');
+            script.src = url;
+            script.onload = () => resolve(window.NewPipeExtractor);
+            script.onerror = reject;
+            document.head.appendChild(script);
         });
-        $button.on('hover:enter', showMenu);
+    }
 
-        $buttonsBlock.append($button);
+    // Поиск видео через NewPipe
+    async function searchYouTube(query) {
+        const NewPipe = await loadScript(NEWPIPE_CDN);
+        // Ищем только видео
+        const results = await NewPipe.searchYoutube(query, ['videos']);
+        // Форматируем для удобства
+        return results.map(item => ({
+            title: item.name,
+            preview: item.thumbnailUrl,
+            channel: item.uploaderName,
+            duration: item.duration,
+            url: item.url, // полный URL видео
+        }));
+    }
 
-        if (Lampa.Controller && Lampa.Controller.collectionAppend) {
-            Lampa.Controller.collectionAppend($button[0]);
+    // Извлечь ID видео из URL
+    function getVideoId(url) {
+        try {
+            return new URL(url).searchParams.get('v');
+        } catch (e) {
+            return null;
         }
-    });
+    }
+
+    // Воспроизведение видео во встроенном плеере Lampa (iframe embed)
+    function playVideo(videoId) {
+        if (videoId) {
+            const embedUrl = 'https://www.youtube.com/embed/' + videoId;
+            // Если доступен Lampa.Iframe, показываем в нём
+            if (typeof Lampa !== 'undefined' && Lampa.Iframe && Lampa.Iframe.show) {
+                Lampa.Iframe.show(embedUrl);
+            } else {
+                // Резервное открытие в новой вкладке
+                window.open('https://www.youtube.com/watch?v=' + videoId, '_blank');
+            }
+        }
+    }
+
+    // Главная функция плагина
+    function initPlugin() {
+        if (typeof Lampa === 'undefined') return;
+
+        // Дожидаемся загрузки карточки фильма
+        Lampa.Listener.follow('full', function (e) {
+            if (e.type === 'complite') {
+                // Ищем название фильма
+                const movie = e.object.card || e.props?.get?.('movie');
+                if (!movie || !movie.title) return;
+
+                const movieTitle = movie.title;
+
+                // Создаём кнопку в интерфейсе
+                const button = $('<div class="full-start__btn full-start__btn--youtube">YouTube</div>');
+
+                // Меню с вариантами поиска
+                const menuItems = [
+                    { title: 'Трейлер', query: movieTitle + ' трейлер' },
+                    { title: 'Фильм', query: movieTitle + ' фильм' },
+                    { title: 'Обзор', query: movieTitle + ' обзор' },
+                ];
+
+                button.on('click', function () {
+                    Lampa.Select.show({
+                        title: 'Поиск на YouTube',
+                        items: menuItems.map(item => ({
+                            title: item.title,
+                            action: async function () {
+                                Lampa.Noty.show('Ищем видео...');
+                                try {
+                                    const videos = await searchYouTube(item.query);
+                                    if (!videos || videos.length === 0) {
+                                        Lampa.Noty.show('Ничего не найдено');
+                                        return;
+                                    }
+
+                                    // Показываем результаты в Select
+                                    const videoItems = videos.map(v => ({
+                                        title: v.title,
+                                        subtitle: `${v.channel} • ${v.duration}`,
+                                        action: function () {
+                                            const videoId = getVideoId(v.url);
+                                            if (videoId) {
+                                                playVideo(videoId);
+                                            } else {
+                                                Lampa.Noty.show('Не удалось открыть видео');
+                                            }
+                                        },
+                                    }));
+
+                                    Lampa.Select.show({
+                                        title: 'Результаты поиска',
+                                        items: videoItems,
+                                    });
+                                } catch (err) {
+                                    console.error('Ошибка при поиске:', err);
+                                    Lampa.Noty.show('Ошибка поиска, попробуйте позже');
+                                }
+                            },
+                        })),
+                        onBack: function () { Lampa.Select.back(); },
+                    });
+                });
+
+                // Добавляем кнопку в интерфейс
+                $('.full-start__buttons').append(button);
+            }
+        });
+    }
+
+    // Старт, когда Lampa готова
+    if (window.Lampa) {
+        initPlugin();
+    } else {
+        window.addEventListener('lampa_ready', initPlugin);
+    }
 })();
