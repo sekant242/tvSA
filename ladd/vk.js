@@ -1,79 +1,57 @@
 (function() {
     'use strict';
 
-    // Ждём готовности Lampa
-    function wait(cb) {
-        if (typeof Lampa !== 'undefined' && Lampa.Listener && Lampa.Activity) {
-            cb();
-        } else {
-            setTimeout(() => wait(cb), 100);
-        }
-    }
+    /**
+     * Плагин добавляет кнопку в карточку фильма/сериала.
+     * При нажатии показывает уведомление "Привет мир".
+     */
 
-    wait(function() {
-        // Простое уведомление – покажет, что плагин загружен
-        try {
-            Lampa.Noty.show('VK Search готов', {time: 2000});
-        } catch(e) {}
+    // Ждём события полной загрузки карточки
+    Lampa.Listener.follow('full', function(e) {
+        // Нас интересует момент, когда карточка полностью отрисована
+        if (e.type !== 'complite') return;
 
-        // Основной метод: следим за событием открытия карточки
-        Lampa.Listener.follow('full', function(e) {
-            // e.type может быть 'start', 'options', 'ready' и т.д.
-            // e.body – jQuery-элемент, в который можно вставлять кнопки
-            // e.data – объект фильма (title, year и т.д.)
+        // Получаем корневой HTML-элемент активности
+        var container = e.body;
+        if (!container) return;
 
-            if (e.type === 'start' && e.body && e.data && e.data.title) {
-                addButtonToBody(e.body, e.data);
-            }
+        // Ищем блок с кнопками внутри карточки
+        var buttonsBlock = container.querySelector('.full-start-new__buttons');
+        if (!buttonsBlock) return;
 
-            // Запасной вариант: если 'start' не пришёл, пробуем поймать 'options'
-            if (e.type === 'options' && e.props) {
-                var movie = e.props.get('movie');
-                if (movie && movie.title) {
-                    addButtonToBody(e.body || $('.view--full'), movie);
-                }
-            }
+        // Проверяем, не добавлена ли уже наша кнопка (чтобы не дублировать)
+        if (buttonsBlock.querySelector('.plugin-hello-button')) return;
+
+        // Создаём кнопку
+        var button = document.createElement('div');
+        button.className = 'full-start__button selector plugin-hello-button';
+        button.innerHTML = `
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
+            </svg>
+            <span>Привет мир</span>
+        `;
+
+        // Обработчик нажатия
+        button.addEventListener('click', function(event) {
+            // Для корректной обработки кликов на TV используем canClick
+            if (Lampa.DeviceInput && !Lampa.DeviceInput.canClick(event.originalEvent)) return;
+            Lampa.Noty.show('Привет мир');
         });
 
-        // Если плагин загрузился, когда карточка уже открыта, пробуем добавить кнопку сейчас
-        setTimeout(function() {
-            var act = Lampa.Activity.active();
-            if (act && act.data && act.data.title) {
-                addButtonToBody($('.view--full'), act.data);
-            }
-        }, 500);
+        // Также добавляем поддержку фокуса и нажатия через пульт
+        button.addEventListener('hover:enter', function() {
+            Lampa.Noty.show('Привет мир');
+        });
+
+        // Добавляем кнопку в конец блока с кнопками
+        buttonsBlock.appendChild(button);
+
+        // Для красивой анимации и работы фокуса уведомляем контроллер о новом элементе
+        if (Lampa.Controller && Lampa.Controller.collectionAppend) {
+            Lampa.Controller.collectionAppend(button);
+        }
+
+        console.log('Плагин "Кнопка Привет мир" активен');
     });
-
-    function addButtonToBody(body, movie) {
-        if (!body || !movie || !movie.title) return;
-
-        // Удаляем старую кнопку
-        $('.vk-search-btn').remove();
-
-        var query = movie.title;
-        if (movie.year) query += ' ' + movie.year;
-        else if (movie.release_date) query += ' ' + movie.release_date.slice(0,4);
-        var url = 'https://vk.com/video?q=' + encodeURIComponent(query.trim()) + '&section=all';
-
-        // Создаём кнопку в стиле Lampa (класс selector нужен для фокуса с пульта)
-        var btn = $('<div class="view__action selector vk-search-btn" style="display:flex;align-items:center;gap:6px;padding:0 12px;cursor:pointer;">' +
-            '<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>' +
-            '<span>VK Видео</span>' +
-            '</div>');
-
-        // При клике (или Enter на пульте) открываем поиск
-        btn.on('click', function(e) {
-            e.stopPropagation();
-            window.open(url, '_blank');
-        });
-
-        // Ищем стандартный контейнер для кнопок внутри body
-        var actions = body.find('.view__actions, .full-card__actions, .view__buttons, .card__actions').first();
-        if (actions.length) {
-            actions.append(btn);
-        } else {
-            // Если контейнера нет, просто добавим в конец body
-            body.append(btn);
-        }
-    }
 })();
