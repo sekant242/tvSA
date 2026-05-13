@@ -1,11 +1,6 @@
-/**
- * vk.js – поиск фильма на VK Видео
- * Исправленная версия: использует Lampa.Listener вместо поиска по CSS-классам
- */
 (function () {
     'use strict';
 
-    // Ожидаем готовности Lampa
     function waitForLampa(callback) {
         if (typeof Lampa !== 'undefined' && Lampa.Listener) {
             callback();
@@ -14,38 +9,64 @@
         }
     }
 
-    // Основная логика добавления кнопок
-    function addVKButtons(title, year) {
-        // Удаляем старые кнопки, если есть
-        const oldBtns = document.querySelectorAll('.vk-search-btn');
-        oldBtns.forEach(b => b.remove());
+    function getTitleFromDOM() {
+        // Самые распространённые селекторы для заголовка в разных темах Lampa
+        const selectors = [
+            '.full-card__title',
+            '.view__title',
+            '.head__title',
+            '.detail__title',
+            'h1' // иногда просто h1
+        ];
+        for (let sel of selectors) {
+            const el = document.querySelector(sel);
+            if (el && el.textContent.trim()) {
+                const text = el.textContent.trim();
+                // Отделяем год в скобках, если есть: "Фильм (2020)"
+                const match = text.match(/^(.+?)\s*\((\d{4})\)$/);
+                if (match) return { title: match[1], year: match[2] };
+                return { title: text, year: '' };
+            }
+        }
+        return null;
+    }
 
-        // Формируем поисковый запрос
+    function addVKButtons(title, year) {
+        // Удаляем предыдущие
+        document.querySelectorAll('.vk-search-btn').forEach(b => b.remove());
+
+        if (!title) return;
+
         const query = encodeURIComponent(`${title} ${year || ''}`.trim());
         const vkSearchUrl = `https://vk.com/video?q=${query}&section=all`;
 
-        // Контейнер для кнопок (обычно это блок с кнопками действий под плеером)
-        const container = document.querySelector('.view__actions') 
+        // Расширенный поиск контейнера
+        const container = document.querySelector('.view__actions')
                        || document.querySelector('.player__actions')
-                       || document.querySelector('.full-card__actions');
+                       || document.querySelector('.full-card__actions')
+                       || document.querySelector('.view__buttons')
+                       || document.querySelector('.card__actions');
 
         if (!container) {
-            // Если контейнера нет, пробуем добавить в конец .view
-            const view = document.querySelector('.view');
-            if (view) {
-                const tempContainer = document.createElement('div');
-                tempContainer.className = 'view__actions vk-actions';
-                view.appendChild(tempContainer);
-                addButtonsToContainer(tempContainer, vkSearchUrl);
+            // Если нет стандартного контейнера, вставляем кнопку рядом с плеером
+            const player = document.querySelector('.player, .view--full');
+            if (player) {
+                const div = document.createElement('div');
+                div.className = 'view__actions vk-actions';
+                div.style.cssText = 'display:flex; gap:8px; margin-top:10px;';
+                player.appendChild(div);
+                addButtonToContainer(div, vkSearchUrl);
+            } else {
+                // Совсем отчаянный вариант — в самый верх body (не рекомендуется)
+                console.warn('VK Search: контейнер для кнопок не найден');
             }
             return;
         }
 
-        addButtonsToContainer(container, vkSearchUrl);
+        addButtonToContainer(container, vkSearchUrl);
     }
 
-    function addButtonsToContainer(container, vkSearchUrl) {
-        // Создаём ссылку-кнопку (стиль взят из типовых кнопок Lampa)
+    function addButtonToContainer(container, vkSearchUrl) {
         const link = document.createElement('a');
         link.className = 'view__action vk-search-btn';
         link.href = vkSearchUrl;
@@ -63,30 +84,35 @@
         container.appendChild(link);
     }
 
-    // Главный обработчик: получаем название из данных Lampa
     function initPlugin() {
-        if (typeof Lampa === 'undefined' || !Lampa.Listener) return;
+        // Вариант 1: через API Lampa (если событие существует)
+        try {
+            Lampa.Listener.follow('full', function (e) {
+                if (e.data && e.data.title) {
+                    setTimeout(() => addVKButtons(e.data.title, e.data.year || ''), 300);
+                }
+            });
+        } catch (e) {
+            console.warn('VK Search: Lampa.Listener.follow("full") не поддерживается');
+        }
 
-        // Слушаем событие открытия полной карточки/плеера
-        Lampa.Listener.follow('full', function (e) {
-            if (e.data && e.data.title) {
-                const title = e.data.title;
-                const year = e.data.year || '';
-                // Даём DOM немного обновиться перед добавлением кнопки
-                setTimeout(() => addVKButtons(title, year), 300);
-            }
-        });
-
-        // На случай, если плагин подгрузился позже, а карточка уже открыта,
-        // пробуем получить текущий фильм через Lampa.Storage или Lampa.Router
+        // Вариант 2: если карточка уже открыта, пробуем взять из хранилища
         if (Lampa.Storage && Lampa.Storage.get) {
-            const currentData = Lampa.Storage.get('full_data');
-            if (currentData && currentData.title) {
-                setTimeout(() => addVKButtons(currentData.title, currentData.year || ''), 500);
+            const stored = Lampa.Storage.get('full_data');
+            if (stored && stored.title) {
+                setTimeout(() => addVKButtons(stored.title, stored.year || ''), 500);
             }
         }
+
+        // Вариант 3 (резервный): следим за изменениями DOM и ищем заголовок сами
+        const observer = new MutationObserver(() => {
+            const info = getTitleFromDOM();
+            if (info && info.title) {
+                addVKButtons(info.title, info.year);
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
     }
 
-    // Запускаем, когда Lampa готова
     waitForLampa(initPlugin);
 })();
