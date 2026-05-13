@@ -1,4 +1,4 @@
-// Плагин: Hero-карусель для главной страницы Lampa (ТВ-версия с логотипом-названием)
+// Плагин: Hero-карусель для Lampa (ТВ-версия с логотипами)
 (function() {
     'use strict';
 
@@ -60,27 +60,29 @@
 
     HeroMainComponent.prototype.renderHero = function(item) {
         if (!this.heroDiv) return;
-        var posterUrl = Lampa.Api.img(item.poster_path || item.img, 'w1280');
-        // Фон – размытый постер, чтобы текст логотипа читался
-        this.heroDiv.style.backgroundImage = 'url(' + posterUrl + ')';
-        this.heroDiv.style.backgroundSize = 'cover';
-        this.heroDiv.style.backgroundPosition = 'center 30%';
+        // Используем backdrop или poster (на ТВ backdrop на весь экран)
+        var backUrl = Lampa.Api.img(item.backdrop_path || item.poster_path || item.img, 'w1280');
+        this.heroDiv.style.backgroundImage = 'url(' + backUrl + ')';
         this.heroDiv.innerHTML = '';
         var overlay = document.createElement('div');
         overlay.className = 'hero-card__overlay';
-        var title = item.title || item.name || '';
+        // Пытаемся взять логотип, если есть (через отдельный запрос)
+        var logoHtml = '';
+        if (item.logo_path) {
+            logoHtml = `<img class="hero-card__logo" src="${Lampa.Api.img(item.logo_path, 'w500')}" alt="${item.title || item.name}">`;
+        } else {
+            // Если логотипа нет – показываем название крупно
+            logoHtml = `<div class="hero-card__title">${item.title || item.name || ''}</div>`;
+        }
         var year = (item.release_date || item.first_air_date || '').slice(0,4);
         var rating = (item.vote_average || 0).toFixed(1);
-        var lang = (item.original_language || '').toUpperCase();
         var overview = (item.overview || 'Нет описания').slice(0, 200);
         if (item.overview && item.overview.length > 200) overview += '...';
-        // Крупное название-логотип по центру
         overlay.innerHTML = `
-            <div class="hero-card__logo">${title}</div>
+            ${logoHtml}
             <div class="hero-card__info">
                 <span>${year}</span>
                 <span>⭐ ${rating}</span>
-                <span>🎬 ${lang}</span>
             </div>
             <div class="hero-card__overview">${overview}</div>
             <div class="hero-card__meta">Актёры и режиссёр загружаются...</div>
@@ -101,17 +103,31 @@
                 });
             });
         }
+        // Дополнительно запрашиваем логотип фильма, если его нет в карточке
+        this.fetchLogo(item);
+    };
+
+    HeroMainComponent.prototype.fetchLogo = function(item) {
+        if (item.logo_path) return;
+        var source = item.source || 'tmdb';
+        var api = Lampa.Api.sources[source];
+        if (!api || !api.get) return;
+        var method = item.name ? 'tv' : 'movie';
+        api.get(method + '/' + item.id + '/images', {}, function(images) {
+            var logos = (images.logos || []).filter(l => l.iso_639_1 === 'en' || l.iso_639_1 === 'ru');
+            if (logos.length) {
+                item.logo_path = logos[0].file_path;
+                this.renderHero(item); // обновим hero-карточку с логотипом
+            }
+        }.bind(this), function() {});
     };
 
     HeroMainComponent.prototype.loadCast = function(item) {
         if (!item.id) return;
-        var method = item.name ? 'tv' : 'movie';
         var source = item.source || 'tmdb';
         var api = Lampa.Api.sources[source];
-        if (!api || !api.get) {
-            console.warn('Api.get not found for source', source);
-            return;
-        }
+        if (!api || !api.get) return;
+        var method = item.name ? 'tv' : 'movie';
         api.get(method + '/' + item.id + '/credits', {}, function(credits) {
             var actors = (credits.cast || []).slice(0, 3).map(a => a.name).join(', ');
             var director = (credits.crew || []).find(c => c.job === 'Director');
@@ -134,7 +150,7 @@
             card.classList.add('selector');
             var img = document.createElement('img');
             img.className = 'strip-card__poster';
-            img.src = Lampa.Api.img(item.poster_path || item.img, 'w200');
+            img.src = Lampa.Api.img(item.poster_path || item.img, 'w300');
             img.onerror = function() { img.src = './img/img_broken.svg'; };
             card.appendChild(img);
             card.on('hover:enter', function() {
@@ -230,58 +246,48 @@
                 height: 100%;
                 display: flex;
                 flex-direction: column;
-                background: #0a0a0c;
+                background: #000;
                 overflow: hidden;
             }
             .hero-card {
-                flex: 2;
+                flex: 3;
                 position: relative;
                 background-size: cover;
-                background-position: center 30%;
-                border-radius: 0;
-                overflow: hidden;
-                box-shadow: none;
-                margin: 0;
-                /* На весь экран по ширине */
+                background-position: center center;
+                background-repeat: no-repeat;
                 width: 100%;
-                min-height: 60vh;
+                min-height: 70vh;
             }
             .hero-card__overlay {
                 position: absolute;
                 bottom: 0;
                 left: 0;
                 right: 0;
-                top: 0;
-                background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.4));
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                align-items: center;
-                text-align: center;
-                padding: 20px;
+                background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.2), transparent);
+                padding: 40px 30px 30px;
                 color: white;
             }
             .hero-card__logo {
-                font-size: 3rem;
+                max-width: 300px;
+                max-height: 80px;
+                object-fit: contain;
+                margin-bottom: 15px;
+            }
+            .hero-card__title {
+                font-size: 2.5rem;
                 font-weight: bold;
-                text-shadow: 0 4px 12px black;
-                margin-bottom: 20px;
-                max-width: 80%;
-                line-height: 1.2;
-                text-transform: uppercase;
-                letter-spacing: 2px;
+                text-shadow: 0 2px 5px black;
+                margin-bottom: 10px;
             }
             .hero-card__info {
                 font-size: 1rem;
                 display: flex;
                 gap: 20px;
-                flex-wrap: wrap;
-                justify-content: center;
-                margin-bottom: 15px;
+                margin-bottom: 10px;
             }
             .hero-card__overview {
                 font-size: 0.9rem;
-                max-width: 70%;
+                max-width: 60%;
                 line-height: 1.4;
                 display: -webkit-box;
                 -webkit-line-clamp: 3;
@@ -290,14 +296,14 @@
                 margin-bottom: 15px;
             }
             .hero-card__meta {
-                font-size: 0.85rem;
+                font-size: 0.8rem;
                 opacity: 0.8;
-                margin-bottom: 20px;
+                margin-bottom: 15px;
             }
             .hero-card__button {
-                background: rgba(255,255,255,0.2);
+                background: rgba(255,255,255,0.25);
                 border: 1px solid rgba(255,255,255,0.5);
-                padding: 10px 30px;
+                padding: 10px 25px;
                 border-radius: 40px;
                 display: inline-block;
                 cursor: pointer;
@@ -305,8 +311,7 @@
                 font-size: 1rem;
             }
             .hero-card__button:hover {
-                background: rgba(255,255,255,0.4);
-                transform: scale(1.05);
+                background: rgba(255,255,255,0.45);
             }
             .carousel-strip {
                 flex: 1;
@@ -314,7 +319,7 @@
                 overflow-x: auto;
                 overflow-y: hidden;
                 scrollbar-width: thin;
-                background: rgba(0,0,0,0.5);
+                background: linear-gradient(to top, #000, transparent);
             }
             .carousel-strip__inner {
                 display: flex;
@@ -330,7 +335,7 @@
                 cursor: pointer;
                 border-radius: 12px;
                 overflow: hidden;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+                box-shadow: 0 5px 15px rgba(0,0,0,0.5);
                 transform-origin: center;
             }
             .strip-card__poster {
@@ -340,27 +345,21 @@
                 display: block;
             }
             .strip-card.selected {
-                transform: scale(1.5);
-                margin: 0 20px;
+                transform: scale(1.6);
+                margin: 0 25px;
                 z-index: 2;
-                box-shadow: 0 12px 28px rgba(0,0,0,0.6);
+                box-shadow: 0 10px 30px rgba(0,0,0,0.7);
             }
             .strip-card:not(.selected) {
                 filter: brightness(0.6);
                 transform: scale(0.85);
             }
-            /* Адаптация для ТВ (большие экраны) */
-            @media (min-width: 1280px) {
-                .hero-card__logo { font-size: 4.5rem; }
-                .hero-card__info { font-size: 1.2rem; gap: 30px; }
-                .hero-card__overview { font-size: 1rem; max-width: 60%; }
-                .strip-card { width: 180px; }
-            }
             @media (max-width: 768px) {
-                .hero-card__logo { font-size: 1.8rem; }
-                .hero-card__overview { max-width: 90%; font-size: 0.75rem; }
-                .strip-card { width: 100px; }
-                .strip-card.selected { transform: scale(1.4); margin: 0 10px; }
+                .hero-card__title { font-size: 1.5rem; }
+                .hero-card__overview { max-width: 100%; font-size: 0.75rem; }
+                .strip-card { width: 110px; }
+                .strip-card.selected { transform: scale(1.4); margin: 0 15px; }
+                .hero-card__logo { max-width: 180px; }
             }
         `;
         document.head.appendChild(style);
@@ -369,7 +368,7 @@
     function replaceMainComponent() {
         if (Lampa.Component.get('main') === HeroMainComponent) return;
         Lampa.Component.add('main', HeroMainComponent);
-        console.log('HeroCarousel: компонент main заменён');
+        console.log('HeroCarousel TV: компонент main заменён');
     }
 
     Lampa.Listener.follow('app', function(e) {
