@@ -1,123 +1,222 @@
 (function() {
     'use strict';
 
-    // Ждём, пока Lampa загрузится
+    // Ждём готовности Lampa
     function waitForLampa(cb) {
         if (window.Lampa && Lampa.Storage && Lampa.Activity) {
             cb();
         } else {
-            setTimeout(function() { waitForLampa(cb); }, 100);
+            setTimeout(() => waitForLampa(cb), 100);
         }
     }
 
-    // Стили библиотеки
+    // ===== Стили в духе Kodi =====
     function addStyles() {
-        var style = document.createElement('style');
+        const style = document.createElement('style');
         style.textContent = `
-            .kodi-library-container { padding: 20px; background: #0d0d0d; min-height: 100vh; color: #fff; }
-            .kodi-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; padding: 20px 0; }
-            .kodi-tile { border-radius: 8px; overflow: hidden; background: #1a1a1a; cursor: pointer; transition: transform 0.2s; }
-            .kodi-tile:hover { transform: scale(1.05); }
-            .kodi-tile img { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; }
-            .kodi-tile-title { padding: 10px; font-size: 14px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .kodi-empty { text-align: center; padding: 40px; color: #888; font-size: 18px; }
-            /* Стиль нашего пункта меню */
-            #kodi-menu-btn {
-                display: flex; flex-direction: column; align-items: center; justify-content: center;
-                cursor: pointer; padding: 8px; min-width: 60px; color: #fff; opacity: 0.7;
+            /* Полноэкранная сетка */
+            .kodi-library-app {
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: #0d0d0d; color: #fff; z-index: 9999; overflow-y: auto;
+                display: flex; flex-direction: column;
             }
-            #kodi-menu-btn.active { opacity: 1; color: #ffaa00; }
-            #kodi-menu-btn .menu-icon { font-size: 22px; margin-bottom: 4px; }
-            #kodi-menu-btn .menu-title { font-size: 12px; white-space: nowrap; }
+            .kodi-header {
+                padding: 15px 20px; display: flex; align-items: center;
+                background: rgba(0,0,0,0.7); backdrop-filter: blur(5px);
+                position: sticky; top: 0; z-index: 10;
+            }
+            .kodi-menu-btn {
+                font-size: 24px; cursor: pointer; margin-right: 20px;
+                background: none; border: none; color: #fff; opacity: 0.8;
+                transition: opacity 0.2s;
+            }
+            .kodi-menu-btn:hover { opacity: 1; }
+            .kodi-title { font-size: 22px; font-weight: 500; }
+            .kodi-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                gap: 20px; padding: 20px; margin: 0 auto; width: 100%;
+                max-width: 1400px; box-sizing: border-box;
+            }
+            .kodi-tile {
+                border-radius: 8px; overflow: hidden; background: #1a1a1a;
+                cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
+                outline: none;
+            }
+            .kodi-tile:focus {
+                box-shadow: 0 0 0 3px #ffaa00; transform: scale(1.03);
+            }
+            .kodi-tile img {
+                width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block;
+            }
+            .kodi-tile-title {
+                padding: 10px; font-size: 14px; text-align: center;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            }
+            .kodi-empty {
+                text-align: center; padding: 40px 20px; color: #888; font-size: 18px;
+            }
+            /* Адаптация для ТВ: убираем скроллбар если нужно */
+            .kodi-library-app::-webkit-scrollbar { width: 6px; }
+            .kodi-library-app::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
         `;
         document.head.appendChild(style);
     }
 
-    // Построение сетки
+    // ===== Построение HTML-сетки =====
     function buildGrid(items) {
-        if (!items || !items.length) return '<div class="kodi-empty">Нет избранного. Добавьте фильмы или сериалы в избранное.</div>';
-        var html = '<div class="kodi-library-grid">';
-        for (var i = 0; i < items.length; i++) {
-            var item = items[i];
-            var poster = item.poster || 'https://via.placeholder.com/160x240?text=No+Image';
-            var title = item.title || item.name || 'Без названия';
-            html += '<div class="kodi-tile" data-id="' + item.id + '" data-type="' + item.type + '">' +
-                        '<img src="' + poster + '" />' +
-                        '<div class="kodi-tile-title">' + title + '</div>' +
-                    '</div>';
+        if (!items || !items.length) {
+            return '<div class="kodi-empty">Ваше избранное пусто. Добавьте фильмы или сериалы в избранное, и они появятся здесь.</div>';
         }
+        let html = '<div class="kodi-grid">';
+        items.forEach((item, index) => {
+            const poster = item.poster || 'https://via.placeholder.com/180x270?text=No+Image';
+            const title = item.title || item.name || 'Без названия';
+            html += `
+                <div class="kodi-tile" tabindex="0" data-id="${item.id}" data-type="${item.type}" data-index="${index}">
+                    <img src="${poster}" alt="${title}" />
+                    <div class="kodi-tile-title">${title}</div>
+                </div>
+            `;
+        });
         html += '</div>';
         return html;
     }
 
-    // Показать библиотеку
+    // ===== Навигация стрелками (для ТВ/пульта) =====
+    function enableGridNavigation(container) {
+        const tiles = Array.from(container.querySelectorAll('.kodi-tile'));
+        if (!tiles.length) return;
+
+        // Определяем количество колонок
+        const firstTile = tiles[0];
+        const tileWidth = firstTile.offsetWidth;
+        const grid = container.querySelector('.kodi-grid');
+        if (!grid) return;
+        const gridStyle = window.getComputedStyle(grid);
+        const columns = parseInt(gridStyle.gridTemplateColumns.split(' ').length) || 
+                        Math.floor(grid.offsetWidth / (tileWidth + 20)); // 20 = gap
+
+        tiles.forEach((tile, i) => {
+            tile.addEventListener('keydown', function(e) {
+                const row = Math.floor(i / columns);
+                const col = i % columns;
+                let nextIndex = i;
+
+                switch(e.key) {
+                    case 'ArrowUp':
+                        if (row > 0) nextIndex = i - columns;
+                        else return;
+                        break;
+                    case 'ArrowDown':
+                        if (row < Math.floor((tiles.length-1) / columns)) nextIndex = i + columns;
+                        else return;
+                        break;
+                    case 'ArrowLeft':
+                        if (col > 0) nextIndex = i - 1;
+                        else return;
+                        break;
+                    case 'ArrowRight':
+                        if (col < columns - 1 && i + 1 < tiles.length) nextIndex = i + 1;
+                        else return;
+                        break;
+                    case 'Enter':
+                        this.click();
+                        return;
+                    default:
+                        return;
+                }
+                e.preventDefault();
+                if (tiles[nextIndex]) tiles[nextIndex].focus();
+            });
+        });
+
+        // Автофокус на первом элементе при открытии
+        setTimeout(() => {
+            if (tiles[0]) tiles[0].focus();
+        }, 100);
+    }
+
+    // ===== Показать библиотеку (заменяет главный экран) =====
     function showLibrary() {
-        var favs = Lampa.Storage.get('bookmarks', []);
+        // Скрываем оригинальный интерфейс Lampa
+        const lampaRoot = document.getElementById('app') || document.body;
+        // Добавим класс, чтобы скрыть всё, кроме нашего приложения
+        lampaRoot.classList.add('kodi-library-mode');
+        // Создаём контейнер
+        const appDiv = document.createElement('div');
+        appDiv.className = 'kodi-library-app';
+        appDiv.id = 'kodi-library-root';
+
+        // Загружаем избранное
+        let favs = Lampa.Storage.get('bookmarks', []);
         if (!Array.isArray(favs)) favs = [];
-        var html = '<div class="kodi-library-container"><h2>Библиотека (Избранное)</h2>' + buildGrid(favs) + '</div>';
-        Lampa.Activity.push({
-            url: '',
-            component: 'html',
-            html: html,
-            onCreate: function() {
-                setTimeout(function() {
-                    var tiles = document.querySelectorAll('.kodi-tile');
-                    for (var j = 0; j < tiles.length; j++) {
-                        tiles[j].addEventListener('click', function() {
-                            var id = this.getAttribute('data-id');
-                            var type = this.getAttribute('data-type');
-                            if (id && type) {
-                                Lampa.Activity.push({
-                                    url: '',
-                                    component: 'full_card',
-                                    card: { id: id, type: type }
-                                });
-                            }
-                        });
-                    }
-                }, 300);
-            }
+
+        appDiv.innerHTML = `
+            <div class="kodi-header">
+                <button class="kodi-menu-btn" id="kodi-menu-button" title="Меню">☰</button>
+                <div class="kodi-title">Библиотека</div>
+            </div>
+            <div class="kodi-content">
+                ${buildGrid(favs)}
+            </div>
+        `;
+
+        // Удаляем старый экземпляр, если есть
+        const oldRoot = document.getElementById('kodi-library-root');
+        if (oldRoot) oldRoot.remove();
+        document.body.appendChild(appDiv);
+
+        // Обработчик кликов по плиткам
+        appDiv.querySelectorAll('.kodi-tile').forEach(tile => {
+            tile.addEventListener('click', function() {
+                const id = this.dataset.id;
+                const type = this.dataset.type;
+                if (id && type) {
+                    Lampa.Activity.push({
+                        url: '',
+                        component: 'full_card',
+                        card: { id, type }
+                    });
+                }
+            });
         });
-    }
 
-    // Создать кнопку меню
-    function createMenuButton() {
-        var btn = document.createElement('div');
-        btn.id = 'kodi-menu-btn';
-        btn.innerHTML = '<div class="menu-icon">📚</div><div class="menu-title">Библиотека</div>';
-        btn.addEventListener('click', showLibrary);
-        return btn;
-    }
-
-    // Вставить кнопку в меню и следить за перерисовкой
-    function injectMenuItem() {
-        // Ищем контейнер меню. Обычно это .menu или .menu__list
-        var menuContainer = document.querySelector('.menu__list') || 
-                            document.querySelector('.menu') || 
-                            document.querySelector('[class*="menu"]');
-        if (!menuContainer) {
-            setTimeout(injectMenuItem, 300);
-            return;
-        }
-
-        // Если кнопка уже есть — выходим
-        if (document.getElementById('kodi-menu-btn')) return;
-
-        // Добавляем
-        menuContainer.appendChild(createMenuButton());
-
-        // Наблюдатель: если меню перерисовали и кнопка пропала — вставим снова
-        var observer = new MutationObserver(function() {
-            if (!document.getElementById('kodi-menu-btn') && menuContainer) {
-                menuContainer.appendChild(createMenuButton());
-            }
+        // Кнопка меню — возвращает в стандартное меню Lampa
+        document.getElementById('kodi-menu-button').addEventListener('click', () => {
+            // Удаляем наше приложение
+            const root = document.getElementById('kodi-library-root');
+            if (root) root.remove();
+            // Убираем класс скрытия
+            lampaRoot.classList.remove('kodi-library-mode');
+            // Открываем главную активность Lampa
+            Lampa.Activity.push({ url: '', component: 'main' });
         });
-        observer.observe(menuContainer, { childList: true, subtree: true });
+
+        // Включаем навигацию стрелками
+        enableGridNavigation(appDiv.querySelector('.kodi-content'));
+
+        // CSS-правило для скрытия оригинального интерфейса
+        const style = document.createElement('style');
+        style.id = 'kodi-hide-lampa-style';
+        style.textContent = `
+            body.kodi-library-mode #app > *:not(#kodi-library-root),
+            body.kodi-library-mode .menu,
+            body.kodi-library-mode .head,
+            body.kodi-library-mode .footer,
+            body.kodi-library-mode .modals { display: none !important; }
+        `;
+        document.head.appendChild(style);
     }
 
-    // Запуск
-    waitForLampa(function() {
+    // ===== Инициализация =====
+    waitForLampa(() => {
         addStyles();
-        injectMenuItem();
+        // При запуске плагина сразу заменяем интерфейс.
+        // Но нужно дождаться, когда Lampa отрисует главную страницу, чтобы потом её скрыть.
+        // Используем небольшой таймаут, чтобы главный экран успел появиться, а затем скроем.
+        setTimeout(() => {
+            showLibrary();
+        }, 500);
     });
 })();
