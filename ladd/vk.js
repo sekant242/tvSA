@@ -1,107 +1,137 @@
 (function() {
     'use strict';
 
-    // Загружаем newpipe-extractor-js с CDN, если ещё не загружен
-    function loadScript(url, callback) {
-        if (window.NewPipeExtractor) {
-            callback();
-            return;
-        }
-        var script = document.createElement('script');
-        script.src = url;
-        script.onload = callback;
-        script.onerror = function() {
-            console.error('Не удалось загрузить NewPipeExtractor');
-        };
-        document.head.appendChild(script);
-    }
+    /**
+     * Получает список видео с RUTUBE по поисковому запросу.
+     * @param {string} query - Поисковый запрос.
+     * @param {Function} callback - Функция обратного вызова, получающая массив с найденными видео.
+     */
+    var searchRutube = function(query, callback) {
+        // Формируем URL для запроса к API RUTUBE
+        var url = 'https://rutube.ru/api/search/?format=json&query=' + encodeURIComponent(query);
 
-    // Извлекаем ID видео из URL YouTube
-    function extractId(url) {
-        var match = url.match(/(?:v=|\/)([0-9A-Za-z_-]{11})(?:[&?\/]|$)/);
-        return match ? match[1] : null;
-    }
-
-    // Основная функция поиска и отображения результатов
-    function searchAndShow(query) {
-        Lampa.Noty.show('Ищу видео...');
-
-        NewPipeExtractor.searchYoutube(query, { type: 'videos', limit: 10 })
-            .then(function(results) {
-                if (!results || !results.items || results.items.length === 0) {
-                    Lampa.Noty.show('Ничего не найдено');
-                    return;
-                }
-
-                var items = results.items.map(function(video) {
+        var req = new Lampa.Reguest();
+        req.silent(url, function(data) {
+            // Проверяем, что в ответе есть результаты
+            if (data && data.results && data.results.length) {
+                // Приводим данные из API RUTUBE к формату, который использует Lampa
+                var items = data.results.map(function(video) {
                     return {
-                        title: video.name || video.title,
-                        action: function() {
-                            var videoId = extractId(video.url);
-                            if (videoId && typeof Lampa.YouTubePlayer !== 'undefined' && Lampa.YouTubePlayer.play) {
-                                Lampa.YouTubePlayer.play(videoId);
-                            } else {
-                                window.open(video.url, '_blank');
-                            }
-                        }
+                        title: video.title,
+                        subtitle: video.author_name || video.category,
+                        url: 'https://rutube.ru' + video.video_url,
+                        icon: video.thumbnail_url,
+                        template: 'selectbox_icon'
                     };
                 });
+                callback(items);
+            } else {
+                // Если видео не найдены, возвращаем пустой массив
+                callback([]);
+            }
+        }, function() {
+            // В случае ошибки запроса также возвращаем пустой массив
+            callback([]);
+        });
+    };
 
-                Lampa.Select.show({
-                    title: 'Результаты поиска',
-                    items: items
-                });
-            })
-            .catch(function(err) {
-                console.error(err);
-                Lampa.Noty.show('Ошибка поиска: ' + err.message);
-            });
-    }
+    // Основной код плагина (остается без изменений)
+    Lampa.Listener.follow('full', function(e) {
+        if (e.type !== 'complite') return;
 
-    // Инициализация плагина после загрузки библиотеки
-    function initPlugin() {
-        // Включаем прокси для обхода CORS (по умолчанию corsproxy.io)
-        NewPipeExtractor.setProxy('https://corsproxy.io/?');
+        var $container = e.body;
+        if (!$container || !$container.length) return;
 
-        Lampa.Listener.follow('full', function(e) {
-            if (e.type === 'complite') {
-                // Не добавляем кнопку повторно
-                if (document.querySelector('.lampa-template-button[data-name="youtube"]')) return;
+        var $buttonsBlock = $container.find('.full-start-new__buttons');
+        if (!$buttonsBlock.length) return;
 
-                Lampa.Template.add_button('info', {
-                    title: 'YouTube',
-                    icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="red" width="24" height="24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>',
-                    action: function() {
-                        var movieTitle = null;
-                        if (e.object && e.object.card && e.object.card.title) {
-                            movieTitle = e.object.card.title;
-                        } else if (e.props && e.props.get && e.props.get('movie')) {
-                            movieTitle = e.props.get('movie').title;
-                        }
+        if ($buttonsBlock.find('.plugin-rutube-button').length) return;
 
-                        if (!movieTitle) {
-                            Lampa.Noty.show('Название не найдено');
-                            return;
-                        }
+        var card = e.object && e.object.card;
+        if (!card) card = e.props && e.props.get('movie');
+        if (!card) return;
 
-                        Lampa.Select.show({
-                            title: 'Поиск на YouTube',
-                            items: [
-                                { title: 'Трейлер', action: function() { searchAndShow(movieTitle + ' трейлер'); } },
-                                { title: 'Фильм целиком', action: function() { searchAndShow(movieTitle + ' фильм'); } },
-                                { title: 'Обзор', action: function() { searchAndShow(movieTitle + ' обзор'); } },
-                                { title: 'Свой запрос', action: function() {
-                                    var input = prompt('Введите поисковый запрос:', movieTitle);
-                                    if (input) searchAndShow(input);
-                                }}
-                            ]
+        var movieTitle = card.title || card.name || '';
+
+        // Создаем кнопку RUTUBE
+        var $button = $('<div class="full-start__button selector plugin-rutube-button">\
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">\
+                <path d="M10 15l5-3-5-3v6zm1-13C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor"/>\
+            </svg>\
+            <span>RUTUBE</span>\
+        </div>');
+
+        // Функция для отображения списка видео
+        var showVideoList = function(items, title) {
+            if (!items.length) {
+                Lampa.Noty.show('Видео не найдены');
+                return;
+            }
+            var enabled = Lampa.Controller.enabled().name;
+            Lampa.Select.show({
+                title: title || movieTitle,
+                items: items,
+                onSelect: function(selected) {
+                    Lampa.Controller.toggle(enabled);
+                    if (selected.url) {
+                        // Открываем выбранное видео через плеер Lampa
+                        Lampa.Player.play({
+                            url: selected.url,
+                            title: selected.title,
+                            youtube: true // Для RUTUBE также подходит, так как Lampa умеет обрабатывать прямые ссылки на видео
                         });
                     }
-                });
-            }
-        });
-    }
+                },
+                onBack: function() {
+                    Lampa.Controller.toggle(enabled);
+                }
+            });
+        };
 
-    // Старт: загружаем библиотеку, затем инициализируем плагин
-    loadScript('https://cdn.jsdelivr.net/npm/newpipe-extractor-js@latest/dist/bundle.js', initPlugin);
+        // Меню с пунктами для RUTUBE
+        var showMenu = function() {
+            var enabled = Lampa.Controller.enabled().name;
+            var menuItems = [
+                { title: 'Трейлеры (RUTUBE)', action: 'trailer' },
+                { title: 'Полный фильм (RUTUBE)', action: 'full' },
+                { title: 'Обзоры и рецензии (RUTUBE)', action: 'review' }
+            ];
+            Lampa.Select.show({
+                title: movieTitle,
+                items: menuItems,
+                onSelect: function(item) {
+                    Lampa.Controller.toggle(enabled);
+                    if (item.action === 'trailer') {
+                        searchRutube(movieTitle + ' трейлер', function(items) {
+                            showVideoList(items, 'Трейлеры на RUTUBE');
+                        });
+                    } else if (item.action === 'full') {
+                        searchRutube(movieTitle + ' фильм полная версия', function(items) {
+                            showVideoList(items, 'Полные версии фильмов на RUTUBE');
+                        });
+                    } else if (item.action === 'review') {
+                        searchRutube(movieTitle + ' обзор рецензия', function(items) {
+                            showVideoList(items, 'Обзоры и рецензии на RUTUBE');
+                        });
+                    }
+                },
+                onBack: function() {
+                    Lampa.Controller.toggle(enabled);
+                }
+            });
+        };
+
+        // Навешиваем обработчики
+        $button.on('click', function(event) {
+            if (Lampa.DeviceInput && !Lampa.DeviceInput.canClick(event.originalEvent)) return;
+            showMenu();
+        });
+        $button.on('hover:enter', showMenu);
+
+        $buttonsBlock.append($button);
+
+        if (Lampa.Controller && Lampa.Controller.collectionAppend) {
+            Lampa.Controller.collectionAppend($button[0]);
+        }
+    });
 })();
