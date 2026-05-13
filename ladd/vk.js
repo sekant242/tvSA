@@ -1,38 +1,49 @@
 (function () {
     'use strict';
 
+    // Ждем готовности Lampa и нашего отладчика DevLog
     function waitForLampa(callback) {
-        if (typeof Lampa !== 'undefined' && Lampa.Listener) {
+        if (typeof Lampa !== 'undefined' && typeof DevLog !== 'undefined') {
             callback();
         } else {
             setTimeout(() => waitForLampa(callback), 100);
         }
     }
 
-    function getTitleFromDOM() {
-        // Самые распространённые селекторы для заголовка в разных темах Lampa
-        const selectors = [
-            '.full-card__title',
-            '.view__title',
-            '.head__title',
-            '.detail__title',
-            'h1' // иногда просто h1
-        ];
-        for (let sel of selectors) {
-            const el = document.querySelector(sel);
-            if (el && el.textContent.trim()) {
-                const text = el.textContent.trim();
-                // Отделяем год в скобках, если есть: "Фильм (2020)"
-                const match = text.match(/^(.+?)\s*\((\d{4})\)$/);
-                if (match) return { title: match[1], year: match[2] };
-                return { title: text, year: '' };
+    // Основная логика после готовности всего
+    function initPlugin() {
+        DevLog.info('=== VK Search: Старт плагина ===');
+
+        // --- Способ 1: Следим за открытием карточки фильма ---
+        Lampa.Listener.follow('full', function (e) {
+            if (e.data && e.data.title) {
+                DevLog.info('VK Search: Событие "full" получено', { title: e.data.title, year: e.data.year });
+                addButton(e.data.title, e.data.year);
+            } else {
+                DevLog.warn('VK Search: Событие "full" без данных', e.data);
             }
-        }
-        return null;
+        });
+
+        // --- Способ 2: Резервный вариант, если событие не сработало ---
+        // Пробуем найти заголовок и контейнер через секунду после загрузки
+        setTimeout(() => {
+            DevLog.info('VK Search: Запуск резервного поиска заголовка...');
+            const titleEl = document.querySelector('.full-card__title, .view__title, .head__title, h1');
+            if (titleEl) {
+                const title = titleEl.textContent.trim().replace(/\s*\(\d{4}\)\s*$/, '');
+                DevLog.info('VK Search: Заголовок найден через DOM', { title: title });
+                addButton(title, null);
+            } else {
+                DevLog.error('VK Search: Заголовок НЕ НАЙДЕН через DOM!');
+            }
+        }, 1000);
     }
 
-    function addVKButtons(title, year) {
-        // Удаляем предыдущие
+    // Функция добавления кнопки
+    function addButton(title, year) {
+        DevLog.info(`VK Search: Пытаемся добавить кнопку для "${title}"...`);
+        
+        // Удаляем старые кнопки
         document.querySelectorAll('.vk-search-btn').forEach(b => b.remove());
 
         if (!title) return;
@@ -40,79 +51,50 @@
         const query = encodeURIComponent(`${title} ${year || ''}`.trim());
         const vkSearchUrl = `https://vk.com/video?q=${query}&section=all`;
 
-        // Расширенный поиск контейнера
-        const container = document.querySelector('.view__actions')
-                       || document.querySelector('.player__actions')
-                       || document.querySelector('.full-card__actions')
-                       || document.querySelector('.view__buttons')
-                       || document.querySelector('.card__actions');
+        // Расширенный список ВСЕХ возможных контейнеров
+        const selectors = [
+            '.view__actions',
+            '.player__actions', 
+            '.full-card__actions',
+            '.view__buttons',
+            '.card__actions',
+            '.view__controls',
+            '.player__controls',
+            '.full-card__buttons'
+        ];
 
-        if (!container) {
-            // Если нет стандартного контейнера, вставляем кнопку рядом с плеером
-            const player = document.querySelector('.player, .view--full');
-            if (player) {
-                const div = document.createElement('div');
-                div.className = 'view__actions vk-actions';
-                div.style.cssText = 'display:flex; gap:8px; margin-top:10px;';
-                player.appendChild(div);
-                addButtonToContainer(div, vkSearchUrl);
-            } else {
-                // Совсем отчаянный вариант — в самый верх body (не рекомендуется)
-                console.warn('VK Search: контейнер для кнопок не найден');
+        let container = null;
+        let usedSelector = '';
+
+        // Ищем первый подходящий
+        for (let sel of selectors) {
+            container = document.querySelector(sel);
+            if (container) {
+                usedSelector = sel;
+                DevLog.info(`VK Search: НАЙДЕН контейнер "${sel}"!`);
+                break;
             }
-            return;
         }
 
-        addButtonToContainer(container, vkSearchUrl);
-    }
+        if (!container) {
+            DevLog.error('VK Search: КОНТЕЙНЕР НЕ НАЙДЕН! Ищем вручную...');
+            // Если ничего не нашли, пробуем вставиться прямо в body для диагностики
+            container = document.body;
+            usedSelector = 'document.body (FALLBACK)';
+        }
 
-    function addButtonToContainer(container, vkSearchUrl) {
+        // Создаем кнопку
         const link = document.createElement('a');
         link.className = 'view__action vk-search-btn';
         link.href = vkSearchUrl;
         link.target = '_blank';
-        link.rel = 'noopener';
-        link.innerHTML = `
-            <span class="view__action-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                </svg>
-            </span>
-            <span class="view__action-text">VK Видео</span>
-        `;
-        link.title = 'Искать на VK Видео';
+        link.innerHTML = '<span>VK Видео</span>';
+        link.style.cssText = 'display:inline-block;padding:8px 12px;margin:4px;background:#07f;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;z-index:9999;';
+        
         container.appendChild(link);
+        DevLog.info(`VK Search: Кнопка УСПЕШНО добавлена в "${usedSelector}"!`);
     }
 
-    function initPlugin() {
-        // Вариант 1: через API Lampa (если событие существует)
-        try {
-            Lampa.Listener.follow('full', function (e) {
-                if (e.data && e.data.title) {
-                    setTimeout(() => addVKButtons(e.data.title, e.data.year || ''), 300);
-                }
-            });
-        } catch (e) {
-            console.warn('VK Search: Lampa.Listener.follow("full") не поддерживается');
-        }
-
-        // Вариант 2: если карточка уже открыта, пробуем взять из хранилища
-        if (Lampa.Storage && Lampa.Storage.get) {
-            const stored = Lampa.Storage.get('full_data');
-            if (stored && stored.title) {
-                setTimeout(() => addVKButtons(stored.title, stored.year || ''), 500);
-            }
-        }
-
-        // Вариант 3 (резервный): следим за изменениями DOM и ищем заголовок сами
-        const observer = new MutationObserver(() => {
-            const info = getTitleFromDOM();
-            if (info && info.title) {
-                addVKButtons(info.title, info.year);
-            }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-    }
-
+    // Запускаем
     waitForLampa(initPlugin);
 })();
