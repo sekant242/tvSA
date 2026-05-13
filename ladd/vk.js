@@ -1,139 +1,107 @@
-/**
- * Плагин поиска YouTube через NewPipe Extractor
- * Кнопка появляется в карточке фильма.
- * Поиск выполняется без API, видео воспроизводятся во встроенном плеере.
- */
-(function () {
+(function() {
     'use strict';
 
-    // URL CDN с браузерной сборкой NewPipe Extractor
-    const NEWPIPE_CDN = 'https://cdn.jsdelivr.net/npm/newpipe-extractor-js@0.3.3/dist/newpipe-extractor.min.js';
-
-    // Загрузка внешнего скрипта
-    function loadScript(url) {
-        return new Promise((resolve, reject) => {
-            if (window.NewPipeExtractor) return resolve(window.NewPipeExtractor);
-            const script = document.createElement('script');
-            script.src = url;
-            script.onload = () => resolve(window.NewPipeExtractor);
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
-    }
-
-    // Поиск видео через NewPipe
-    async function searchYouTube(query) {
-        const NewPipe = await loadScript(NEWPIPE_CDN);
-        // Ищем только видео
-        const results = await NewPipe.searchYoutube(query, ['videos']);
-        // Форматируем для удобства
-        return results.map(item => ({
-            title: item.name,
-            preview: item.thumbnailUrl,
-            channel: item.uploaderName,
-            duration: item.duration,
-            url: item.url, // полный URL видео
-        }));
-    }
-
-    // Извлечь ID видео из URL
-    function getVideoId(url) {
-        try {
-            return new URL(url).searchParams.get('v');
-        } catch (e) {
-            return null;
+    // Загружаем newpipe-extractor-js с CDN, если ещё не загружен
+    function loadScript(url, callback) {
+        if (window.NewPipeExtractor) {
+            callback();
+            return;
         }
+        var script = document.createElement('script');
+        script.src = url;
+        script.onload = callback;
+        script.onerror = function() {
+            console.error('Не удалось загрузить NewPipeExtractor');
+        };
+        document.head.appendChild(script);
     }
 
-    // Воспроизведение видео во встроенном плеере Lampa (iframe embed)
-    function playVideo(videoId) {
-        if (videoId) {
-            const embedUrl = 'https://www.youtube.com/embed/' + videoId;
-            // Если доступен Lampa.Iframe, показываем в нём
-            if (typeof Lampa !== 'undefined' && Lampa.Iframe && Lampa.Iframe.show) {
-                Lampa.Iframe.show(embedUrl);
-            } else {
-                // Резервное открытие в новой вкладке
-                window.open('https://www.youtube.com/watch?v=' + videoId, '_blank');
-            }
-        }
+    // Извлекаем ID видео из URL YouTube
+    function extractId(url) {
+        var match = url.match(/(?:v=|\/)([0-9A-Za-z_-]{11})(?:[&?\/]|$)/);
+        return match ? match[1] : null;
     }
 
-    // Главная функция плагина
-    function initPlugin() {
-        if (typeof Lampa === 'undefined') return;
+    // Основная функция поиска и отображения результатов
+    function searchAndShow(query) {
+        Lampa.Noty.show('Ищу видео...');
 
-        // Дожидаемся загрузки карточки фильма
-        Lampa.Listener.follow('full', function (e) {
-            if (e.type === 'complite') {
-                // Ищем название фильма
-                const movie = e.object.card || e.props?.get?.('movie');
-                if (!movie || !movie.title) return;
+        NewPipeExtractor.searchYoutube(query, { type: 'videos', limit: 10 })
+            .then(function(results) {
+                if (!results || !results.items || results.items.length === 0) {
+                    Lampa.Noty.show('Ничего не найдено');
+                    return;
+                }
 
-                const movieTitle = movie.title;
-
-                // Создаём кнопку в интерфейсе
-                const button = $('<div class="full-start__btn full-start__btn--youtube">YouTube</div>');
-
-                // Меню с вариантами поиска
-                const menuItems = [
-                    { title: 'Трейлер', query: movieTitle + ' трейлер' },
-                    { title: 'Фильм', query: movieTitle + ' фильм' },
-                    { title: 'Обзор', query: movieTitle + ' обзор' },
-                ];
-
-                button.on('click', function () {
-                    Lampa.Select.show({
-                        title: 'Поиск на YouTube',
-                        items: menuItems.map(item => ({
-                            title: item.title,
-                            action: async function () {
-                                Lampa.Noty.show('Ищем видео...');
-                                try {
-                                    const videos = await searchYouTube(item.query);
-                                    if (!videos || videos.length === 0) {
-                                        Lampa.Noty.show('Ничего не найдено');
-                                        return;
-                                    }
-
-                                    // Показываем результаты в Select
-                                    const videoItems = videos.map(v => ({
-                                        title: v.title,
-                                        subtitle: `${v.channel} • ${v.duration}`,
-                                        action: function () {
-                                            const videoId = getVideoId(v.url);
-                                            if (videoId) {
-                                                playVideo(videoId);
-                                            } else {
-                                                Lampa.Noty.show('Не удалось открыть видео');
-                                            }
-                                        },
-                                    }));
-
-                                    Lampa.Select.show({
-                                        title: 'Результаты поиска',
-                                        items: videoItems,
-                                    });
-                                } catch (err) {
-                                    console.error('Ошибка при поиске:', err);
-                                    Lampa.Noty.show('Ошибка поиска, попробуйте позже');
-                                }
-                            },
-                        })),
-                        onBack: function () { Lampa.Select.back(); },
-                    });
+                var items = results.items.map(function(video) {
+                    return {
+                        title: video.name || video.title,
+                        action: function() {
+                            var videoId = extractId(video.url);
+                            if (videoId && typeof Lampa.YouTubePlayer !== 'undefined' && Lampa.YouTubePlayer.play) {
+                                Lampa.YouTubePlayer.play(videoId);
+                            } else {
+                                window.open(video.url, '_blank');
+                            }
+                        }
+                    };
                 });
 
-                // Добавляем кнопку в интерфейс
-                $('.full-start__buttons').append(button);
+                Lampa.Select.show({
+                    title: 'Результаты поиска',
+                    items: items
+                });
+            })
+            .catch(function(err) {
+                console.error(err);
+                Lampa.Noty.show('Ошибка поиска: ' + err.message);
+            });
+    }
+
+    // Инициализация плагина после загрузки библиотеки
+    function initPlugin() {
+        // Включаем прокси для обхода CORS (по умолчанию corsproxy.io)
+        NewPipeExtractor.setProxy('https://corsproxy.io/?');
+
+        Lampa.Listener.follow('full', function(e) {
+            if (e.type === 'complite') {
+                // Не добавляем кнопку повторно
+                if (document.querySelector('.lampa-template-button[data-name="youtube"]')) return;
+
+                Lampa.Template.add_button('info', {
+                    title: 'YouTube',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="red" width="24" height="24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>',
+                    action: function() {
+                        var movieTitle = null;
+                        if (e.object && e.object.card && e.object.card.title) {
+                            movieTitle = e.object.card.title;
+                        } else if (e.props && e.props.get && e.props.get('movie')) {
+                            movieTitle = e.props.get('movie').title;
+                        }
+
+                        if (!movieTitle) {
+                            Lampa.Noty.show('Название не найдено');
+                            return;
+                        }
+
+                        Lampa.Select.show({
+                            title: 'Поиск на YouTube',
+                            items: [
+                                { title: 'Трейлер', action: function() { searchAndShow(movieTitle + ' трейлер'); } },
+                                { title: 'Фильм целиком', action: function() { searchAndShow(movieTitle + ' фильм'); } },
+                                { title: 'Обзор', action: function() { searchAndShow(movieTitle + ' обзор'); } },
+                                { title: 'Свой запрос', action: function() {
+                                    var input = prompt('Введите поисковый запрос:', movieTitle);
+                                    if (input) searchAndShow(input);
+                                }}
+                            ]
+                        });
+                    }
+                });
             }
         });
     }
 
-    // Старт, когда Lampa готова
-    if (window.Lampa) {
-        initPlugin();
-    } else {
-        window.addEventListener('lampa_ready', initPlugin);
-    }
+    // Старт: загружаем библиотеку, затем инициализируем плагин
+    loadScript('https://cdn.jsdelivr.net/npm/newpipe-extractor-js@latest/dist/bundle.js', initPlugin);
 })();
