@@ -3,7 +3,7 @@
 
     const pluginName = 'start_menu_skin';
 
-    // ====================== ВИЗУАЛЬНЫЙ ЛОГГЕР ======================
+    // ========== ЛОГ-ПАНЕЛЬ ==========
     function createLogPanel() {
         const panel = document.createElement('div');
         panel.id = 'lampa-log-panel';
@@ -42,21 +42,26 @@
         panel.scrollTop = panel.scrollHeight;
     }
 
-    // ====================== ОСНОВНАЯ ЛОГИКА ======================
+    // ========== ПРИМЕНЕНИЕ СКИНА ==========
     function applySkin(menuElement) {
-        if (!menuElement) {
-            log('Меню не найдено, скин не применён', true);
+        if (!menuElement || !menuElement.classList) {
+            log('Элемент меню не является HTML-элементом или отсутствует', true);
             return;
         }
 
-        log(`Найдено меню: ${menuElement.tagName}.${menuElement.className}`);
+        // Добавляем уникальный класс-маркер
+        menuElement.classList.add('start-menu-skinned');
+        log('Класс start-menu-skinned добавлен к меню');
+
+        // Удаляем старые стили плагина, если есть
         const oldStyle = document.getElementById('start-menu-skin-styles');
         if (oldStyle) oldStyle.remove();
 
+        // Внедряем CSS, используя наш класс-маркер
         const style = document.createElement('style');
         style.id = 'start-menu-skin-styles';
         style.textContent = `
-            ${menuElement.tagName.toLowerCase()}.${menuElement.className.replace(/\s+/g, '.')} {
+            .start-menu-skinned {
                 background: #c0c0c0 !important;
                 border: 2px solid;
                 border-color: #ffffff #808080 #808080 #ffffff !important;
@@ -68,7 +73,8 @@
                 position: relative !important;
                 overflow: hidden !important;
             }
-            ${menuElement.tagName.toLowerCase()}.${menuElement.className.replace(/\s+/g, '.')}::before {
+
+            .start-menu-skinned::before {
                 content: "LAMPA";
                 position: absolute;
                 left: 0;
@@ -90,10 +96,16 @@
                 text-transform: uppercase;
                 z-index: 1;
             }
-            ${menuElement.tagName.toLowerCase()}.${menuElement.className.replace(/\s+/g, '.')} > * {
+
+            .start-menu-skinned > * {
                 margin-left: 30px !important;
             }
-            .menu__item, .sidebar-item, .lampa-menu-item, [class*="menu"] [class*="item"] {
+
+            /* Стили пунктов меню — применяем к потомкам */
+            .start-menu-skinned .menu__item,
+            .start-menu-skinned .sidebar-item,
+            .start-menu-skinned .lampa-menu-item,
+            .start-menu-skinned [class*="menu"] [class*="item"] {
                 padding: 6px 10px !important;
                 cursor: pointer !important;
                 display: flex !important;
@@ -101,7 +113,10 @@
                 gap: 8px !important;
                 transition: background 0.1s !important;
             }
-            .menu__item:hover, .sidebar-item:hover, .lampa-menu-item:hover, [class*="menu"] [class*="item"]:hover {
+            .start-menu-skinned .menu__item:hover,
+            .start-menu-skinned .sidebar-item:hover,
+            .start-menu-skinned .lampa-menu-item:hover,
+            .start-menu-skinned [class*="menu"] [class*="item"]:hover {
                 background: #000080 !important;
                 color: #ffffff !important;
             }
@@ -129,9 +144,11 @@
         }
     }
 
+    // ========== ПОИСК МЕНЮ И ЗАПУСК ==========
     function init() {
-        log('Плагин start_menu_skin активирован. Ищу меню...');
+        log('Плагин активирован. Ищу меню...');
 
+        // Возможные селекторы главного меню (подгоните под свою версию)
         const selectors = [
             '.menu',
             '.sidebar',
@@ -144,9 +161,10 @@
         let menuElement = null;
         for (const sel of selectors) {
             const el = document.querySelector(sel);
-            if (el && el.offsetParent !== null) {
+            // Проверяем, что элемент — HTMLElement и видим
+            if (el && el instanceof HTMLElement && el.offsetParent !== null) {
                 menuElement = el;
-                log(`Меню найдено по селектору: ${sel}`);
+                log(`Меню найдено по селектору: "${sel}"`);
                 break;
             }
         }
@@ -154,23 +172,22 @@
         if (menuElement) {
             applySkin(menuElement);
         } else {
-            log('Меню не обнаружено в DOM. Жду 2 секунды...', true);
+            log('Меню не в DOM. Ожидание 2 сек...', true);
             setTimeout(() => {
                 for (const sel of selectors) {
                     const el = document.querySelector(sel);
-                    if (el && el.offsetParent !== null) {
-                        log(`Меню появилось по селектору: ${sel}`);
+                    if (el && el instanceof HTMLElement && el.offsetParent !== null) {
+                        log(`Меню появилось: "${sel}"`);
                         applySkin(el);
                         return;
                     }
                 }
-                log('Меню так и не появилось. Добавьте правильный селектор в код плагина.', true);
-                log('Проверьте, открыто ли меню в момент загрузки плагина.', false);
+                log('Меню не найдено! Добавьте правильный селектор в код плагина.', true);
             }, 2000);
         }
     }
 
-    // Регистрация в Lampa
+    // ========== РЕГИСТРАЦИЯ В LAMPA ==========
     try {
         if (window.Lampa && window.Lampa.Plugins) {
             Lampa.Plugins.add(pluginName, init);
@@ -181,11 +198,11 @@
                     Lampa.Plugins.add(pluginName, init);
                     log('Плагин зарегистрирован после загрузки страницы');
                 } else {
-                    log('Lampa API не найден! Убедитесь, что плагин установлен в актуальную версию Lampa.', true);
+                    log('Lampa API не найден! Проверьте версию Lampa.', true);
                 }
             });
         }
     } catch (e) {
-        log(`Критическая ошибка при регистрации: ${e.message}`, true);
+        log(`Ошибка регистрации: ${e.message}`, true);
     }
 })();
