@@ -4,7 +4,6 @@
     const MAX_LOGS = 2000;
     let logBuffer = [];
 
-    // Сохраняем оригинальные методы
     const origConsole = {
         log: console.log,
         error: console.error,
@@ -26,20 +25,17 @@
         logBuffer.push({ time, type, text });
         if (logBuffer.length > MAX_LOGS) logBuffer.shift();
 
-        // Обновить текстовую область, если окно открыто
         if (window._devLogTextArea) {
             updateTextArea(window._devLogTextArea);
         }
     }
 
-    // Перехватываем console
     console.log = function() { addLog('log', arguments); origConsole.log.apply(console, arguments); };
     console.error = function() { addLog('error', arguments); origConsole.error.apply(console, arguments); };
     console.warn = function() { addLog('warn', arguments); origConsole.warn.apply(console, arguments); };
     console.info = function() { addLog('info', arguments); origConsole.info.apply(console, arguments); };
     console.debug = function() { addLog('debug', arguments); origConsole.debug.apply(console, arguments); };
 
-    // Глобальное API для использования другими плагинами
     window.DevLog = {
         log: function() { addLog('log', arguments); },
         error: function() { addLog('error', arguments); },
@@ -78,112 +74,107 @@
         ta.select();
         try {
             document.execCommand('copy');
-            alert('Скопировано!');
+            Lampa.Noty.show('Скопировано!');
         } catch (err) {
-            alert('Ошибка копирования');
+            Lampa.Noty.show('Ошибка копирования');
         }
         document.body.removeChild(ta);
     }
 
-    // Ждём загрузку Lampa
+    function openDevLog() {
+        // Удаляем старое окно, если уже было открыто, чтобы обновить содержимое
+        const old = document.querySelector('.devlog-activity');
+        if (old) old.remove();
+
+        const container = document.createElement('div');
+        container.className = 'devlog-activity';
+        container.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
+            'background:#1a1a1a;z-index:10000;display:flex;flex-direction:column;';
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;' +
+            'padding:10px 15px;background:#111;color:#fff;font-size:18px;';
+        header.innerHTML = '<span>🐞 Dev Log</span>';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✖';
+        closeBtn.style.cssText = 'background:none;border:none;color:#fff;font-size:22px;cursor:pointer;';
+        closeBtn.addEventListener('click', () => container.remove());
+        header.appendChild(closeBtn);
+
+        const textarea = document.createElement('textarea');
+        textarea.readOnly = true;
+        textarea.style.cssText = 'flex:1;width:100%;background:#000;color:#0f0;' +
+            'font-family:monospace;font-size:13px;border:none;outline:none;' +
+            'resize:none;padding:10px;white-space:pre-wrap;word-break:break-all;';
+        window._devLogTextArea = textarea;
+        updateTextArea(textarea);
+
+        const footer = document.createElement('div');
+        footer.style.cssText = 'display:flex;padding:10px;gap:10px;justify-content:flex-end;';
+
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = 'Copy All';
+        copyBtn.style.cssText = 'padding:10px 20px;background:#333;color:#fff;border:none;border-radius:4px;';
+        copyBtn.addEventListener('click', () => {
+            const logText = textarea.value;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(logText)
+                    .then(() => Lampa.Noty.show('Скопировано!'))
+                    .catch(() => fallbackCopy(logText));
+            } else {
+                fallbackCopy(logText);
+            }
+        });
+
+        const clearBtn = document.createElement('button');
+        clearBtn.textContent = 'Clear';
+        clearBtn.style.cssText = 'padding:10px 20px;background:#333;color:#fff;border:none;border-radius:4px;';
+        clearBtn.addEventListener('click', () => DevLog.clear());
+
+        footer.appendChild(copyBtn);
+        footer.appendChild(clearBtn);
+        container.appendChild(header);
+        container.appendChild(textarea);
+        container.appendChild(footer);
+        document.body.appendChild(container);
+    }
+
+    // Дожидаемся Lampa
     function waitForLampa(callback) {
-        if (typeof Lampa !== 'undefined' && Lampa.Component) {
+        if (window.Lampa && Lampa.Component) {
             callback();
         } else {
             const check = setInterval(() => {
-                if (typeof Lampa !== 'undefined' && Lampa.Component) {
+                if (window.Lampa && Lampa.Component) {
                     clearInterval(check);
                     callback();
                 }
-            }, 100);
+            }, 200);
         }
     }
 
     waitForLampa(() => {
-        const activity = {
-            title: 'Dev Log',
-            component: function() {
-                const container = document.createElement('div');
-                container.className = 'devlog-container';
-                container.style.cssText = 'display:flex;flex-direction:column;height:100%;padding:10px;box-sizing:border-box;';
+        // Добавляем кнопку в интерфейс (рядом с поиском или в правый нижний угол)
+        const fab = document.createElement('div');
+        fab.id = 'devlog-fab';
+        fab.innerHTML = 'LOG';
+        fab.style.cssText = 'position:fixed;bottom:80px;right:15px;z-index:9999;' +
+            'background:#e74c3c;color:#fff;width:48px;height:48px;display:flex;' +
+            'align-items:center;justify-content:center;border-radius:50%;' +
+            'font-weight:bold;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.5);' +
+            'cursor:pointer;user-select:none;';
+        fab.addEventListener('click', openDevLog);
+        document.body.appendChild(fab);
 
-                const textarea = document.createElement('textarea');
-                textarea.readOnly = true;
-                textarea.style.cssText = 'flex:1;width:100%;background:#111;color:#0f0;' +
-                    'font-family:monospace;font-size:13px;border:1px solid #333;' +
-                    'resize:none;padding:8px;white-space:pre-wrap;word-break:break-all;';
-                window._devLogTextArea = textarea;
-                updateTextArea(textarea);
-
-                const buttonsDiv = document.createElement('div');
-                buttonsDiv.style.cssText = 'display:flex;gap:10px;margin-top:10px;';
-
-                const copyAllBtn = document.createElement('button');
-                copyAllBtn.textContent = 'Copy All';
-                copyAllBtn.style.cssText = 'padding:8px 15px;background:#333;color:#fff;' +
-                    'border:none;border-radius:4px;cursor:pointer;';
-                copyAllBtn.addEventListener('click', () => {
-                    const logText = textarea.value;
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(logText)
-                            .then(() => alert('Скопировано!'))
-                            .catch(() => fallbackCopy(logText));
-                    } else {
-                        fallbackCopy(logText);
-                    }
-                });
-
-                const clearBtn = document.createElement('button');
-                clearBtn.textContent = 'Clear';
-                clearBtn.style.cssText = 'padding:8px 15px;background:#333;color:#fff;' +
-                    'border:none;border-radius:4px;cursor:pointer;';
-                clearBtn.addEventListener('click', () => DevLog.clear());
-
-                buttonsDiv.appendChild(copyAllBtn);
-                buttonsDiv.appendChild(clearBtn);
-                container.appendChild(textarea);
-                container.appendChild(buttonsDiv);
-
-                // Стили выделения
-                const style = document.createElement('style');
-                style.textContent = '.devlog-container textarea:focus { outline: none; }' +
-                    '.devlog-container button:hover { background:#555; }';
-                container.appendChild(style);
-
-                return container;
-            }
-        };
-
-        // Регистрируем вкладку
-        if (Lampa.Activity && Lampa.Activity.add) {
-            Lampa.Activity.add('devlog', activity);
-        }
-
-        // Добавляем пункт в меню
-        if (Lampa.Menu && Lampa.Menu.add) {
+        // Попробуем добавить в боковое меню (если сработает)
+        try {
             Lampa.Menu.add('plugins', {
                 title: 'Dev Log',
                 icon: 'log',
-                action: () => {
-                    if (Lampa.Activity && Lampa.Activity.open) {
-                        Lampa.Activity.open('devlog');
-                    }
-                }
+                action: openDevLog
             });
-        } else {
-            // Плавающая кнопка как запасной вариант
-            const btn = document.createElement('div');
-            btn.textContent = 'LOG';
-            btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;' +
-                'background:#e74c3c;color:#fff;padding:10px;border-radius:50%;' +
-                'width:40px;height:40px;display:flex;align-items:center;justify-content:center;' +
-                'cursor:pointer;font-weight:bold;box-shadow:0 2px 5px rgba(0,0,0,0.3);';
-            btn.addEventListener('click', () => {
-                if (Lampa.Activity && Lampa.Activity.open) {
-                    Lampa.Activity.open('devlog');
-                }
-            });
-            document.body.appendChild(btn);
-        }
+        } catch(e) {}
     });
+
 })();
