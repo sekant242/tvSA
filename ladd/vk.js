@@ -1,123 +1,96 @@
 (function() {
     'use strict';
 
-    // Локализация
-    Lampa.Lang.add({
-        vksearch_ready: { ru: 'VK Search готов', en: 'VK Search ready', uk: 'VK Search готовий' },
-        vksearch_vk: { ru: '🔍 VK Видео', en: '🔍 VK Video', uk: '🔍 VK Відео' },
-        vksearch_yt: { ru: '🔍 YouTube', en: '🔍 YouTube', uk: '🔍 YouTube' },
-        vksearch_rutube: { ru: '🔍 Rutube', en: '🔍 Rutube', uk: '🔍 Rutube' },
-        vksearch_open_url: { ru: 'Ссылка: ', en: 'Link: ', uk: 'Посилання: ' }
-    });
-
-    // Сервисы по умолчанию
-    var defaultServices = [
-        {
-            key: 'vk',
-            title: 'vksearch_vk',
-            url: function(query) {
-                return 'https://vk.com/video?q=' + encodeURIComponent(query) + '&section=all';
-            }
-        },
-        {
-            key: 'yt',
-            title: 'vksearch_yt',
-            url: function(query) {
-                return 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
-            }
-        },
-        {
-            key: 'rutube',
-            title: 'vksearch_rutube',
-            url: function(query) {
-                return 'https://rutube.ru/search/?query=' + encodeURIComponent(query);
-            }
+    // Ждём готовности Lampa
+    function wait(cb) {
+        if (typeof Lampa !== 'undefined' && Lampa.Listener && Lampa.Activity) {
+            cb();
+        } else {
+            setTimeout(() => wait(cb), 100);
         }
-    ];
+    }
 
-    // Добавляем настройки в раздел "Ещё"
-    Lampa.SettingsApi.addParam({
-        component: 'more',
-        param: {
-            name: 'vksearch_enabled_vk',
-            type: 'toggle',
-            default: true
-        },
-        field: {
-            name: 'Показывать VK Видео',
-            description: 'Кнопка поиска на VK Видео'
-        },
-        onChange: function(value) {
-            // Просто сохраняется, перезагрузка не требуется
-        }
-    });
-    Lampa.SettingsApi.addParam({
-        component: 'more',
-        param: {
-            name: 'vksearch_enabled_yt',
-            type: 'toggle',
-            default: true
-        },
-        field: {
-            name: 'Показывать YouTube',
-            description: 'Кнопка поиска на YouTube'
-        },
-        onChange: function(value) {}
-    });
-    Lampa.SettingsApi.addParam({
-        component: 'more',
-        param: {
-            name: 'vksearch_enabled_rutube',
-            type: 'toggle',
-            default: true
-        },
-        field: {
-            name: 'Показывать Rutube',
-            description: 'Кнопка поиска на Rutube'
-        },
-        onChange: function(value) {}
-    });
+    wait(function() {
+        // Уведомление для диагностики
+        Lampa.Noty.show('VK Search готов', {time: 2000});
 
-    // Уведомление о загрузке (для диагностики)
-    Lampa.Noty.show(Lampa.Lang.translate('vksearch_ready'), {time: 1500});
+        // Функция для добавления кнопок в карточку
+        function addButtons(body, movie) {
+            if (!body || !movie || !movie.title) return;
 
-    // Основной обработчик – добавляет пункты в контекстное меню карточки
-    Lampa.Listener.follow('full', function(e) {
-        if (e.type !== 'options' || !e.props) return;
+            // Удаляем старые кнопки
+            $('.vk-search-btn').remove();
 
-        var movie = e.props.get('movie');
-        if (!movie || !movie.title) return;
+            var query = movie.title;
+            if (movie.year) query += ' ' + movie.year;
+            else if (movie.release_date) query += ' ' + movie.release_date.slice(0,4);
+            query = query.trim();
 
-        // Формируем поисковый запрос
-        var query = movie.title;
-        if (movie.year) {
-            query += ' ' + movie.year;
-        } else if (movie.release_date) {
-            query += ' ' + movie.release_date.slice(0,4);
-        }
-        query = query.trim();
+            // Создаём контейнер для кнопок (если нужно несколько)
+            var buttonsContainer = $('<div class="vk-search-buttons" style="display:flex;gap:8px;margin-left:8px;"></div>');
 
-        // Для каждого включённого сервиса добавляем пункт
-        defaultServices.forEach(function(service) {
-            var settingKey = 'vksearch_enabled_' + service.key;
-            var enabled = Lampa.Storage.get(settingKey, true); // по умолчанию true
-            if (enabled === false || enabled === 'false') return;
-
-            var title = Lampa.Lang.translate(service.title);
-            var url = service.url(query);
-
-            e.options.push({
-                title: title,
-                onSelect: function() {
+            // Функция создания одной кнопки
+            function createButton(title, url) {
+                var btn = $('<div class="view__action selector vk-search-btn" style="display:flex;align-items:center;gap:4px;padding:0 8px;cursor:pointer;">' +
+                    '<svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>' +
+                    '<span>' + title + '</span>' +
+                    '</div>');
+                btn.on('click', function(e) {
+                    e.stopPropagation();
                     if (typeof window !== 'undefined' && window.open) {
                         window.open(url, '_blank');
                     } else {
-                        // Для ТВ показываем ссылку в уведомлении
-                        Lampa.Noty.show(Lampa.Lang.translate('vksearch_open_url') + url, {time: 5000});
+                        Lampa.Noty.show('Ссылка: ' + url, {time: 5000});
                     }
-                }
+                });
+                return btn;
+            }
+
+            // Доступные сервисы (можно включать/отключать через Storage)
+            var services = [
+                { key: 'vk', title: 'VK', url: 'https://vk.com/video?q=' + encodeURIComponent(query) + '&section=all' },
+                { key: 'yt', title: 'YouTube', url: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query) },
+                { key: 'rutube', title: 'Rutube', url: 'https://rutube.ru/search/?query=' + encodeURIComponent(query) }
+            ];
+
+            services.forEach(function(s) {
+                var enabled = Lampa.Storage.get('vksearch_enabled_' + s.key, true);
+                if (enabled === false || enabled === 'false') return;
+                buttonsContainer.append(createButton(s.title, s.url));
             });
+
+            // Ищем контейнер для вставки внутри body (переданного события)
+            var actions = body.find('.view__actions, .full-card__actions, .view__buttons, .card__actions').first();
+            if (actions.length) {
+                actions.append(buttonsContainer);
+            } else {
+                body.append(buttonsContainer);
+            }
+        }
+
+        // Следим за открытием карточки
+        Lampa.Listener.follow('full', function(e) {
+            if (e.type === 'start' && e.body && e.data && e.data.title) {
+                addButtons(e.body, e.data);
+            }
+            // Запасной вариант для события 'options' (вдруг оно тоже приходит)
+            if (e.type === 'options' && e.props && e.props.get) {
+                try {
+                    var movie = e.props.get('movie');
+                    if (movie && movie.title) {
+                        addButtons(e.body || $('.view--full'), movie);
+                    }
+                } catch (err) {}
+            }
         });
+
+        // Если плагин загрузился позже, а карточка уже открыта
+        setTimeout(function() {
+            var act = Lampa.Activity.active();
+            if (act && act.data && act.data.title) {
+                addButtons($('.view--full'), act.data);
+            }
+        }, 500);
     });
 
 })();
