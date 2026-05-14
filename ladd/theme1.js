@@ -1,4 +1,4 @@
-// Плагин: Hero-карусель для Lampa (ТВ-версия с логотипами)
+// Плагин: Hero-карусель для Lampa (ТВ/мобильная версия с адаптивной шапкой)
 (function() {
     'use strict';
 
@@ -8,11 +8,13 @@
         this.params = object.params || {};
         this.allItems = [];
         this.currentIndex = 0;
+        this.currentFocus = 'hero'; // 'hero' или 'carousel'
         this.html = null;
         this.heroDiv = null;
         this.carouselDiv = null;
         this.carouselInner = null;
         this.activity = null;
+        this.lastBgColor = '#000000';
     };
     HeroMainComponent.prototype = Object.create(Lampa.Emit.prototype);
     HeroMainComponent.prototype.constructor = HeroMainComponent;
@@ -60,20 +62,20 @@
 
     HeroMainComponent.prototype.renderHero = function(item) {
         if (!this.heroDiv) return;
-        // Используем backdrop или poster (на ТВ backdrop на весь экран)
         var backUrl = Lampa.Api.img(item.backdrop_path || item.poster_path || item.img, 'w1280');
         this.heroDiv.style.backgroundImage = 'url(' + backUrl + ')';
         this.heroDiv.innerHTML = '';
         var overlay = document.createElement('div');
         overlay.className = 'hero-card__overlay';
-        // Пытаемся взять логотип, если есть (через отдельный запрос)
+
+        // Логотип или заголовок
         var logoHtml = '';
         if (item.logo_path) {
             logoHtml = `<img class="hero-card__logo" src="${Lampa.Api.img(item.logo_path, 'w500')}" alt="${item.title || item.name}">`;
         } else {
-            // Если логотипа нет – показываем название крупно
             logoHtml = `<div class="hero-card__title">${item.title || item.name || ''}</div>`;
         }
+
         var year = (item.release_date || item.first_air_date || '').slice(0,4);
         var rating = (item.vote_average || 0).toFixed(1);
         var overview = (item.overview || 'Нет описания').slice(0, 200);
@@ -85,11 +87,12 @@
                 <span>⭐ ${rating}</span>
             </div>
             <div class="hero-card__overview">${overview}</div>
-            <div class="hero-card__meta">Актёры и режиссёр загружаются...</div>
+            <div class="hero-card__meta">Загрузка актёров...</div>
             <div class="hero-card__button selector">Смотреть</div>
         `;
         this.heroDiv.appendChild(overlay);
         this.loadCast(item);
+        this.updateHeaderColor(backUrl);
         var watchBtn = overlay.querySelector('.hero-card__button');
         if (watchBtn) {
             watchBtn.on('hover:enter', function() {
@@ -103,8 +106,36 @@
                 });
             });
         }
-        // Дополнительно запрашиваем логотип фильма, если его нет в карточке
         this.fetchLogo(item);
+    };
+
+    HeroMainComponent.prototype.updateHeaderColor = function(imageUrl) {
+        var self = this;
+        // Создаём временное изображение для анализа цвета
+        var img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = function() {
+            var canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, img.width, img.height);
+            var data = ctx.getImageData(0, 0, img.width, img.height).data;
+            var r = 0, g = 0, b = 0, count = 0;
+            for (var i = 0; i < data.length; i += 10) {
+                r += data[i];
+                g += data[i+1];
+                b += data[i+2];
+                count++;
+            }
+            r = Math.floor(r / count);
+            g = Math.floor(g / count);
+            b = Math.floor(b / count);
+            var color = `rgb(${r}, ${g}, ${b})`;
+            document.documentElement.style.setProperty('--hero-header-bg', color);
+            self.lastBgColor = color;
+        };
+        img.src = imageUrl;
     };
 
     HeroMainComponent.prototype.fetchLogo = function(item) {
@@ -117,7 +148,7 @@
             var logos = (images.logos || []).filter(l => l.iso_639_1 === 'en' || l.iso_639_1 === 'ru');
             if (logos.length) {
                 item.logo_path = logos[0].file_path;
-                this.renderHero(item); // обновим hero-карточку с логотипом
+                this.renderHero(item);
             }
         }.bind(this), function() {});
     };
@@ -187,40 +218,73 @@
 
     HeroMainComponent.prototype.start = function() {
         var self = this;
-        Lampa.Controller.add('hero_carousel', {
+        var currentFocus = 'hero'; // hero или carousel
+
+        var controller = {
             toggle: function() {
-                Lampa.Controller.collectionSet(self.carouselInner);
-                var selected = self.carouselInner.querySelector('.strip-card.selected');
-                Lampa.Controller.collectionFocus(selected, self.carouselInner);
-            },
-            right: function() {
-                if (self.currentIndex < self.allItems.length - 1) {
-                    self.setCurrentIndex(self.currentIndex + 1);
-                }
-            },
-            left: function() {
-                if (self.currentIndex > 0) {
-                    self.setCurrentIndex(self.currentIndex - 1);
+                if (currentFocus === 'hero') {
+                    Lampa.Controller.collectionSet(self.heroDiv);
+                    Lampa.Controller.collectionFocus(self.heroDiv.querySelector('.hero-card__button'), self.heroDiv);
+                } else {
+                    Lampa.Controller.collectionSet(self.carouselInner);
+                    var selected = self.carouselInner.querySelector('.strip-card.selected');
+                    Lampa.Controller.collectionFocus(selected, self.carouselInner);
                 }
             },
             up: function() {
-                Lampa.Controller.toggle('head');
+                if (currentFocus === 'carousel') {
+                    currentFocus = 'hero';
+                    controller.toggle();
+                } else {
+                    Lampa.Controller.toggle('head');
+                }
+            },
+            down: function() {
+                if (currentFocus === 'hero') {
+                    currentFocus = 'carousel';
+                    controller.toggle();
+                }
+            },
+            right: function() {
+                if (currentFocus === 'carousel') {
+                    if (self.currentIndex < self.allItems.length - 1) {
+                        self.setCurrentIndex(self.currentIndex + 1);
+                    }
+                }
+            },
+            left: function() {
+                if (currentFocus === 'carousel') {
+                    if (self.currentIndex > 0) {
+                        self.setCurrentIndex(self.currentIndex - 1);
+                    }
+                }
             },
             enter: function() {
-                var item = self.allItems[self.currentIndex];
-                Lampa.Activity.push({
-                    url: '',
-                    component: 'full',
-                    id: item.id,
-                    method: item.name ? 'tv' : 'movie',
-                    card: item,
-                    source: item.source || 'tmdb'
-                });
+                if (currentFocus === 'hero') {
+                    var item = self.allItems[self.currentIndex];
+                    Lampa.Activity.push({
+                        url: '',
+                        component: 'full',
+                        id: item.id,
+                        method: item.name ? 'tv' : 'movie',
+                        card: item,
+                        source: item.source || 'tmdb'
+                    });
+                } else {
+                    var selectedCard = self.carouselInner.querySelector('.strip-card.selected');
+                    if (selectedCard) {
+                        var idx = parseInt(selectedCard.getAttribute('data-index'));
+                        self.setCurrentIndex(idx);
+                        currentFocus = 'hero';
+                        controller.toggle();
+                    }
+                }
             },
             back: function() {
                 Lampa.Activity.backward();
             }
-        });
+        };
+        Lampa.Controller.add('hero_carousel', controller);
         Lampa.Controller.toggle('hero_carousel');
         this.emit('start');
     };
@@ -241,6 +305,7 @@
         var style = document.createElement('style');
         style.id = 'hero-carousel-styles';
         style.textContent = `
+            /* Основные стили */
             .hero-carousel-container {
                 width: 100%;
                 height: 100%;
@@ -249,15 +314,20 @@
                 background: #000;
                 overflow: hidden;
             }
+            /* Hero-карточка на весь экран с учётом шапки */
             .hero-card {
                 flex: 3;
                 position: relative;
                 background-size: cover;
-                background-position: center center;
+                background-position: center 30%;
                 background-repeat: no-repeat;
+                min-height: 0;
                 width: 100%;
-                min-height: 70vh;
+                border-radius: 0 0 30px 30px;
+                overflow: hidden;
+                margin-top: 0;
             }
+            /* Градиентная подложка для текста */
             .hero-card__overlay {
                 position: absolute;
                 bottom: 0;
@@ -266,15 +336,16 @@
                 background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.2), transparent);
                 padding: 40px 30px 30px;
                 color: white;
+                backdrop-filter: blur(2px);
             }
             .hero-card__logo {
-                max-width: 300px;
+                max-width: 280px;
                 max-height: 80px;
                 object-fit: contain;
                 margin-bottom: 15px;
             }
             .hero-card__title {
-                font-size: 2.5rem;
+                font-size: 2.2rem;
                 font-weight: bold;
                 text-shadow: 0 2px 5px black;
                 margin-bottom: 10px;
@@ -301,29 +372,31 @@
                 margin-bottom: 15px;
             }
             .hero-card__button {
-                background: rgba(255,255,255,0.25);
+                background: rgba(255,255,255,0.2);
                 border: 1px solid rgba(255,255,255,0.5);
                 padding: 10px 25px;
-                border-radius: 40px;
+                border-radius: 50px;
                 display: inline-block;
                 cursor: pointer;
                 transition: 0.2s;
                 font-size: 1rem;
+                backdrop-filter: blur(5px);
             }
             .hero-card__button:hover {
-                background: rgba(255,255,255,0.45);
+                background: rgba(255,255,255,0.4);
             }
+            /* Нижняя карусель — без обрезания карточек */
             .carousel-strip {
-                flex: 1;
+                flex: 1.2;
                 padding: 20px 0;
                 overflow-x: auto;
                 overflow-y: hidden;
                 scrollbar-width: thin;
-                background: linear-gradient(to top, #000, transparent);
+                background: linear-gradient(to top, #050505, #0a0a0c);
             }
             .carousel-strip__inner {
                 display: flex;
-                gap: 15px;
+                gap: 18px;
                 padding: 0 30px;
                 align-items: center;
                 height: 100%;
@@ -331,35 +404,45 @@
             .strip-card {
                 flex-shrink: 0;
                 width: 160px;
-                transition: all 0.2s ease;
+                transition: all 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
                 cursor: pointer;
-                border-radius: 12px;
+                border-radius: 24px;
                 overflow: hidden;
-                box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+                box-shadow: 0 8px 20px rgba(0,0,0,0.4);
                 transform-origin: center;
             }
             .strip-card__poster {
                 width: 100%;
                 aspect-ratio: 2 / 3;
-                object-fit: cover;
+                object-fit: cover; /* было contain — cover всё же лучше для карточек */
                 display: block;
+                transition: transform 0.2s;
             }
             .strip-card.selected {
-                transform: scale(1.6);
+                transform: scale(1.55);
                 margin: 0 25px;
                 z-index: 2;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+                box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+                border-radius: 28px;
             }
             .strip-card:not(.selected) {
-                filter: brightness(0.6);
+                filter: brightness(0.7);
                 transform: scale(0.85);
             }
+            /* Адаптация для мобильных */
             @media (max-width: 768px) {
-                .hero-card__title { font-size: 1.5rem; }
+                .hero-card__title { font-size: 1.3rem; }
                 .hero-card__overview { max-width: 100%; font-size: 0.75rem; }
                 .strip-card { width: 110px; }
-                .strip-card.selected { transform: scale(1.4); margin: 0 15px; }
-                .hero-card__logo { max-width: 180px; }
+                .strip-card.selected { transform: scale(1.4); margin: 0 10px; }
+                .hero-card__logo { max-width: 160px; }
+                .hero-card__overlay { padding: 20px 15px; }
+            }
+            /* Стиль шапки, адаптирующейся под фон */
+            .head {
+                background: var(--hero-header-bg, rgba(0,0,0,0.6)) !important;
+                backdrop-filter: blur(10px);
+                transition: background 0.3s ease;
             }
         `;
         document.head.appendChild(style);
