@@ -1,501 +1,441 @@
-// Улучшенный код плагина theme1.js для Lampa
-// Автор: sekant242, доработан с учетом предложений
-
+// Плагин: Hero-карусель для Lampa (ТВ-версия с логотипами, адаптивная шапка, нормальные карточки)
 (function() {
     'use strict';
 
-    const PLUGIN_NAME = 'theme1';
-    const CACHE_KEY = 'theme1_cache';
-    const CACHE_DURATION = 30 * 60 * 1000; // 30 минут кэширования
-    const POSTER_BASE = 'https://image.tmdb.org/t/p/';
-    const POSTER_SIZE_SMALL = 'w300';
-    const POSTER_SIZE_LARGE = 'w1280';
-    const POSTER_SIZE_LOGO = 'w300'; // для логотипов
+    var HeroMainComponent = function(object) {
+        Lampa.Emit.call(this);
+        this.object = object || {};
+        this.params = object.params || {};
+        this.allItems = [];
+        this.currentIndex = 0;
+        this.html = null;
+        this.heroDiv = null;
+        this.carouselDiv = null;
+        this.carouselInner = null;
+        this.activity = null;
+        this.originalHeadDownHandler = null;
+    };
+    HeroMainComponent.prototype = Object.create(Lampa.Emit.prototype);
+    HeroMainComponent.prototype.constructor = HeroMainComponent;
 
-    // Утилита: получение доминирующего цвета из изображения
-    function getDominantColor(imageUrl, callback) {
-        const img = new Image();
+    HeroMainComponent.prototype.create = function() {
+        this.html = document.createElement('div');
+        this.html.className = 'hero-carousel-container';
+        this.heroDiv = document.createElement('div');
+        this.heroDiv.className = 'hero-card';
+        this.carouselDiv = document.createElement('div');
+        this.carouselDiv.className = 'carousel-strip';
+        this.carouselInner = document.createElement('div');
+        this.carouselInner.className = 'carousel-strip__inner';
+        this.carouselDiv.appendChild(this.carouselInner);
+        this.html.appendChild(this.heroDiv);
+        this.html.appendChild(this.carouselDiv);
+        this.loadData();
+        this.emit('create');
+    };
+
+    HeroMainComponent.prototype.loadData = function() {
+        var self = this;
+        if (this.activity) this.activity.loader(true);
+        Lampa.Api.main(this.object, function(lines) {
+            self.allItems = [];
+            lines.forEach(function(line) {
+                if (line.results && line.results.length) {
+                    self.allItems = self.allItems.concat(line.results);
+                }
+            });
+            if (self.allItems.length === 0) {
+                self.showEmpty();
+                return;
+            }
+            self.currentIndex = 0;
+            self.renderHero(self.allItems[0]);
+            self.renderCarousel();
+            if (self.activity) self.activity.loader(false);
+            self.emit('build');
+        }, function(err) {
+            if (self.activity) self.activity.loader(false);
+            self.showEmpty();
+        });
+    };
+
+    HeroMainComponent.prototype.renderHero = function(item) {
+        if (!this.heroDiv) return;
+        var backUrl = Lampa.Api.img(item.backdrop_path || item.poster_path || item.img, 'w1280');
+        this.heroDiv.style.backgroundImage = 'url(' + backUrl + ')';
+        this.heroDiv.innerHTML = '';
+        var overlay = document.createElement('div');
+        overlay.className = 'hero-card__overlay';
+        var logoHtml = '';
+        if (item.logo_path) {
+            logoHtml = `<img class="hero-card__logo" src="${Lampa.Api.img(item.logo_path, 'w500')}" alt="${item.title || item.name}">`;
+        } else {
+            logoHtml = `<div class="hero-card__title">${item.title || item.name || ''}</div>`;
+        }
+        var year = (item.release_date || item.first_air_date || '').slice(0,4);
+        var rating = (item.vote_average || 0).toFixed(1);
+        var overview = (item.overview || 'Нет описания').slice(0, 200);
+        if (item.overview && item.overview.length > 200) overview += '...';
+        overlay.innerHTML = `
+            ${logoHtml}
+            <div class="hero-card__info">
+                <span>${year}</span>
+                <span>⭐ ${rating}</span>
+            </div>
+            <div class="hero-card__overview">${overview}</div>
+            <div class="hero-card__meta">Актёры и режиссёр загружаются...</div>
+            <div class="hero-card__button selector">Смотреть</div>
+        `;
+        this.heroDiv.appendChild(overlay);
+        this.loadCast(item);
+        this.fetchLogo(item);
+        this.adjustHeadColor(backUrl);
+        this.adjustHeadMargin();
+        var watchBtn = overlay.querySelector('.hero-card__button');
+        if (watchBtn) {
+            watchBtn.on('hover:enter', function() {
+                Lampa.Activity.push({
+                    url: '',
+                    component: 'full',
+                    id: item.id,
+                    method: item.name ? 'tv' : 'movie',
+                    card: item,
+                    source: item.source || 'tmdb'
+                });
+            });
+        }
+    };
+
+    HeroMainComponent.prototype.adjustHeadMargin = function() {
+        var head = document.querySelector('.head');
+        if (head) {
+            var headHeight = head.offsetHeight;
+            this.heroDiv.style.marginTop = headHeight + 'px';
+        }
+    };
+
+    HeroMainComponent.prototype.adjustHeadColor = function(imageUrl) {
+        var img = new Image();
         img.crossOrigin = 'Anonymous';
         img.onload = function() {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+            var canvas = document.createElement('canvas');
             canvas.width = img.width;
             canvas.height = img.height;
-            ctx.drawImage(img, 0, 0, 1, 1);
-            const pixel = ctx.getImageData(0, 0, 1, 1).data;
-            const [r, g, b] = pixel;
-            // Возвращаем rgba
-            callback(`rgba(${r},${g},${b},0.85)`);
-        };
-        img.onerror = function() {
-            // Fallback: полупрозрачный черный
-            callback('rgba(0,0,0,0.6)');
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, img.width, img.height);
+            var data = ctx.getImageData(0, 0, img.width, img.height).data;
+            var r = 0, g = 0, b = 0, count = 0;
+            for (var i = 0; i < data.length; i += 4) {
+                r += data[i];
+                g += data[i+1];
+                b += data[i+2];
+                count++;
+            }
+            r = Math.floor(r / count);
+            g = Math.floor(g / count);
+            b = Math.floor(b / count);
+            var brightness = (r * 0.299 + g * 0.587 + b * 0.114);
+            var head = document.querySelector('.head');
+            if (head) {
+                head.style.backgroundColor = `rgba(${r}, ${g}, ${b}, 0.85)`;
+                head.style.color = brightness > 128 ? '#000' : '#fff';
+                var logo = head.querySelector('.head__logo-icon svg, .head__logo-icon img');
+                if (logo) logo.style.filter = brightness > 128 ? 'invert(1)' : 'none';
+            }
         };
         img.src = imageUrl;
-    }
+    };
 
-    // Кэширование данных
-    function getCachedData() {
-        try {
-            const cached = localStorage.getItem(CACHE_KEY);
-            if (cached) {
-                const { data, timestamp } = JSON.parse(cached);
-                if (Date.now() - timestamp < CACHE_DURATION) {
-                    return data;
-                }
+    HeroMainComponent.prototype.fetchLogo = function(item) {
+        if (item.logo_path) return;
+        var source = item.source || 'tmdb';
+        var api = Lampa.Api.sources[source];
+        if (!api || !api.get) return;
+        var method = item.name ? 'tv' : 'movie';
+        api.get(method + '/' + item.id + '/images', {}, function(images) {
+            var logos = (images.logos || []).filter(l => l.iso_639_1 === 'en' || l.iso_639_1 === 'ru');
+            if (logos.length) {
+                item.logo_path = logos[0].file_path;
+                this.renderHero(item);
             }
-        } catch (e) {}
-        return null;
-    }
+        }.bind(this), function() {});
+    };
 
-    function setCachedData(data) {
-        try {
-            localStorage.setItem(CACHE_KEY, JSON.stringify({
-                data: data,
-                timestamp: Date.now()
-            }));
-        } catch (e) {}
-    }
-
-    // Класс плагина
-    class Theme1Plugin {
-        constructor() {
-            this.name = PLUGIN_NAME;
-            this.container = null;
-            this.data = [];
-            this.activeIndex = 0;
-            this.bgElement = null;
-            this.listElement = null;
-            this.logoElement = null;
-            this.loading = true;
-            this.error = null;
-            this._handlers = [];
-            this._controller = null;
-            this.dominantColors = {}; // кэш доминирующих цветов
-        }
-
-        init() {
-            Lampa.Component.add('theme1', {
-                template: `<div class="theme1-container"></div>`,
-                onCreate: () => {
-                    this.container = document.querySelector('.theme1-container');
-                    this.render();
-                    this.loadData();
-                },
-                onStart: () => {
-                    this.bindController();
-                    this.focusActive();
-                },
-                onDestroy: () => {
-                    this.destroy();
-                }
-            });
-
-            // Регистрация в контроллере Lampa
-            Lampa.Controller.add('theme1', {
-                toggle: () => {
-                    this.toggle();
-                },
-                left: () => {
-                    this.moveLeft();
-                },
-                right: () => {
-                    this.moveRight();
-                },
-                enter: () => {
-                    this.openItem();
-                },
-                back: () => {
-                    Lampa.Controller.toggle('menu');
-                }
-            });
-
-            // Показать плагин
-            Lampa.Controller.toggle('theme1');
-        }
-
-        render() {
-            if (!this.container) return;
-
-            this.container.innerHTML = `
-                <div class="theme1-background"></div>
-                <div class="theme1-header">
-                    <div class="theme1-logo"></div>
-                </div>
-                <div class="theme1-list-wrapper">
-                    <div class="theme1-list"></div>
-                </div>
-                <div class="theme1-loading">Загрузка...</div>
-                <div class="theme1-error" style="display:none;">
-                    <div class="theme1-error-message"></div>
-                    <button class="theme1-retry-button">Повторить</button>
-                </div>
-            `;
-
-            this.bgElement = this.container.querySelector('.theme1-background');
-            this.listElement = this.container.querySelector('.theme1-list');
-            this.logoElement = this.container.querySelector('.theme1-logo');
-            this.loadingEl = this.container.querySelector('.theme1-loading');
-            this.errorEl = this.container.querySelector('.theme1-error');
-            this.errorMsg = this.container.querySelector('.theme1-error-message');
-            this.retryButton = this.container.querySelector('.theme1-retry-button');
-
-            // Кнопка повтора
-            this.retryButton.addEventListener('click', () => {
-                this.loadData();
-            });
-
-            // Применение стилей (поддержка темы из Lampa)
-            const isDark = Lampa.Storage.get('theme', 'dark') === 'dark';
-            this.applyTheme(isDark);
-        }
-
-        applyTheme(isDark) {
-            const styleId = 'theme1-styles';
-            let styleEl = document.getElementById(styleId);
-            if (!styleEl) {
-                styleEl = document.createElement('style');
-                styleEl.id = styleId;
-                document.head.appendChild(styleEl);
+    HeroMainComponent.prototype.loadCast = function(item) {
+        if (!item.id) return;
+        var source = item.source || 'tmdb';
+        var api = Lampa.Api.sources[source];
+        if (!api || !api.get) return;
+        var method = item.name ? 'tv' : 'movie';
+        api.get(method + '/' + item.id + '/credits', {}, function(credits) {
+            var actors = (credits.cast || []).slice(0, 3).map(a => a.name).join(', ');
+            var director = (credits.crew || []).find(c => c.job === 'Director');
+            var directorName = director ? director.name : '';
+            var metaDiv = this.heroDiv?.querySelector('.hero-card__meta');
+            if (metaDiv) {
+                metaDiv.innerHTML = `<span>Режиссёр: ${directorName}</span> | <span>В ролях: ${actors || '—'}</span>`;
             }
-            const bg = isDark ? '#0a0a0a' : '#f0f0f0';
-            const text = isDark ? '#ffffff' : '#222222';
-            const cardBg = isDark ? 'rgba(20,20,20,0.9)' : 'rgba(255,255,255,0.9)';
-            styleEl.textContent = `
-                .theme1-container {
-                    position: fixed;
-                    top: 0; left: 0; right: 0; bottom: 0;
-                    overflow: hidden;
-                    background: ${bg};
-                    color: ${text};
-                    font-family: 'Roboto', sans-serif;
-                    z-index: 1000;
-                }
-                .theme1-background {
-                    position: absolute;
-                    top: 0; left: 0; width: 100%; height: 100%;
-                    background-size: cover;
-                    background-position: center;
-                    transition: background-image 0.5s ease;
-                    filter: blur(10px);
-                    transform: scale(1.1);
-                }
-                .theme1-header {
-                    position: absolute;
-                    top: 20px;
-                    left: 20px;
-                    z-index: 2;
-                    padding: 10px 20px;
-                    border-radius: 12px;
-                    backdrop-filter: blur(10px);
-                    background: rgba(0,0,0,0.6);
-                    transition: background 0.3s;
-                    max-width: 60%;
-                }
-                .theme1-logo img {
-                    height: 60px;
-                    max-width: 400px;
-                    object-fit: contain;
-                }
-                .theme1-list-wrapper {
-                    position: absolute;
-                    bottom: 80px;
-                    left: 0;
-                    width: 100%;
-                    overflow: hidden;
-                    z-index: 3;
-                }
-                .theme1-list {
-                    display: flex;
-                    gap: 20px;
-                    padding: 0 40px;
-                    transition: transform 0.3s ease;
-                    white-space: nowrap;
-                }
-                .theme1-card {
-                    flex: 0 0 auto;
-                    width: 200px;
-                    height: 300px;
-                    border-radius: 12px;
-                    background: ${cardBg};
-                    box-shadow: 0 8px 20px rgba(0,0,0,0.6);
-                    overflow: hidden;
-                    cursor: pointer;
-                    transition: transform 0.2s, box-shadow 0.2s;
-                    position: relative;
-                }
-                .theme1-card.active {
-                    transform: scale(1.1);
-                    box-shadow: 0 12px 30px rgba(255,255,255,0.3);
-                    border: 2px solid #fff;
-                }
-                .theme1-card img {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
-                }
-                .theme1-card-title {
-                    position: absolute;
-                    bottom: 10px;
-                    left: 10px;
-                    right: 10px;
-                    background: rgba(0,0,0,0.7);
-                    padding: 4px 8px;
-                    border-radius: 8px;
-                    font-size: 14px;
-                    text-align: center;
-                    color: #fff;
-                }
-                .theme1-loading, .theme1-error {
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: rgba(0,0,0,0.8);
-                    padding: 20px 40px;
-                    border-radius: 12px;
-                    color: #fff;
-                    font-size: 18px;
-                    z-index: 5;
-                    text-align: center;
-                }
-                .theme1-retry-button {
-                    margin-top: 10px;
-                    padding: 8px 20px;
-                    border: none;
-                    border-radius: 8px;
-                    background: #e50914;
-                    color: white;
-                    font-size: 16px;
-                    cursor: pointer;
-                }
-            `;
+        }.bind(this), function() {});
+    };
+
+    HeroMainComponent.prototype.renderCarousel = function() {
+        if (!this.carouselInner) return;
+        this.carouselInner.innerHTML = '';
+        var self = this;
+        this.allItems.forEach(function(item, idx) {
+            var card = document.createElement('div');
+            card.className = 'strip-card' + (idx === self.currentIndex ? ' selected' : '');
+            card.setAttribute('data-index', idx);
+            card.classList.add('selector');
+            var img = document.createElement('img');
+            img.className = 'strip-card__poster';
+            img.src = Lampa.Api.img(item.poster_path || item.img, 'w300');
+            img.onerror = function() { img.src = './img/img_broken.svg'; };
+            card.appendChild(img);
+            card.on('hover:enter', function() {
+                self.setCurrentIndex(idx);
+            });
+            self.carouselInner.appendChild(card);
+        });
+        setTimeout(function() { self.scrollToSelected(); }, 100);
+    };
+
+    HeroMainComponent.prototype.scrollToSelected = function() {
+        var selected = this.carouselInner.querySelector('.strip-card.selected');
+        if (selected) selected.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    };
+
+    HeroMainComponent.prototype.setCurrentIndex = function(newIndex) {
+        if (newIndex === this.currentIndex) return;
+        this.currentIndex = newIndex;
+        this.renderHero(this.allItems[newIndex]);
+        var cards = this.carouselInner.querySelectorAll('.strip-card');
+        cards.forEach(function(card, i) {
+            if (i === newIndex) card.classList.add('selected');
+            else card.classList.remove('selected');
+        });
+        this.scrollToSelected();
+    };
+
+    HeroMainComponent.prototype.showEmpty = function() {
+        var empty = new Lampa.Empty({ title: 'Ничего не найдено', descr: 'Попробуйте позже' });
+        if (this.html) {
+            this.html.innerHTML = '';
+            this.html.appendChild(empty.render(true));
         }
+        if (this.activity) this.activity.loader(false);
+        empty.start();
+    };
 
-        async loadData() {
-            // Сначала пробуем кэш
-            const cached = getCachedData();
-            if (cached) {
-                this.data = cached;
-                this.loading = false;
-                this.showContent();
-                return;
-            }
-
-            try {
-                this.loading = true;
-                this.showLoading();
-                // Пример API Lampa (замените на актуальный вызов)
-                const response = await Lampa.Api.request({
-                    url: '/api/movies/popular',
-                    method: 'get'
+    HeroMainComponent.prototype.start = function() {
+        var self = this;
+        Lampa.Controller.add('hero_carousel', {
+            toggle: function() {
+                Lampa.Controller.collectionSet(self.carouselInner);
+                var selected = self.carouselInner.querySelector('.strip-card.selected');
+                Lampa.Controller.collectionFocus(selected, self.carouselInner);
+            },
+            right: function() {
+                if (self.currentIndex < self.allItems.length - 1) {
+                    self.setCurrentIndex(self.currentIndex + 1);
+                }
+            },
+            left: function() {
+                if (self.currentIndex > 0) {
+                    self.setCurrentIndex(self.currentIndex - 1);
+                }
+            },
+            up: function() {
+                // Переключаем фокус на head, но сохраняем возможность вернуться
+                var headController = Lampa.Controller.enabled().name;
+                if (headController !== 'head') {
+                    self.originalHeadDownHandler = null;
+                    Lampa.Controller.toggle('head');
+                    // Переопределяем обработчик down в head, чтобы вернуться
+                    var originalToggle = Lampa.Controller.controlls.head.toggle;
+                    Lampa.Controller.controlls.head.down = function() {
+                        Lampa.Controller.toggle('hero_carousel');
+                        // Восстанавливаем оригинальный down
+                        Lampa.Controller.controlls.head.down = originalToggle;
+                    };
+                }
+            },
+            down: function() {
+                // Уже в карусели, ничего не делаем
+            },
+            enter: function() {
+                var item = self.allItems[self.currentIndex];
+                Lampa.Activity.push({
+                    url: '',
+                    component: 'full',
+                    id: item.id,
+                    method: item.name ? 'tv' : 'movie',
+                    card: item,
+                    source: item.source || 'tmdb'
                 });
-                // Предположим, response.list - массив фильмов с полями: id, title, poster_path, backdrop_path, logo_path
-                this.data = response.list || [];
-                if (this.data.length === 0) {
-                    this.showError('Ничего не найдено');
-                    return;
-                }
-                setCachedData(this.data);
-                this.loading = false;
-                this.showContent();
-            } catch (err) {
-                console.error('theme1 load error:', err);
-                this.showError('Ошибка загрузки. Попробуйте позже.');
+            },
+            back: function() {
+                Lampa.Activity.backward();
             }
-        }
+        });
+        Lampa.Controller.toggle('hero_carousel');
+        this.emit('start');
+    };
 
-        showLoading() {
-            if (this.loadingEl) this.loadingEl.style.display = 'block';
-            if (this.errorEl) this.errorEl.style.display = 'none';
-        }
+    HeroMainComponent.prototype.pause = function() {};
+    HeroMainComponent.prototype.stop = function() {};
+    HeroMainComponent.prototype.destroy = function() {
+        if (this.html) this.html.remove();
+        Lampa.Controller.clear();
+        this.emit('destroy');
+    };
+    HeroMainComponent.prototype.render = function(js) {
+        return js ? this.html : $(this.html);
+    };
 
-        showError(message) {
-            this.loading = false;
-            if (this.loadingEl) this.loadingEl.style.display = 'none';
-            if (this.errorEl) {
-                this.errorEl.style.display = 'block';
-                if (this.errorMsg) this.errorMsg.textContent = message;
+    function addStyles() {
+        if (document.getElementById('hero-carousel-styles')) return;
+        var style = document.createElement('style');
+        style.id = 'hero-carousel-styles';
+        style.textContent = `
+            .hero-carousel-container {
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                background: #000;
+                overflow: hidden;
             }
-        }
-
-        showContent() {
-            if (this.loadingEl) this.loadingEl.style.display = 'none';
-            if (this.errorEl) this.errorEl.style.display = 'none';
-            this.renderCards();
-            this.activeIndex = 0;
-            this.updateActiveCard();
-            this.updateBackground();
-            this.updateLogo();
-            this.focusActive();
-        }
-
-        renderCards() {
-            if (!this.listElement) return;
-            this.listElement.innerHTML = '';
-            this.data.forEach((item, index) => {
-                const card = document.createElement('div');
-                card.className = 'theme1-card';
-                card.setAttribute('data-index', index);
-                const posterUrl = item.poster_path ? 
-                    `${POSTER_BASE}${this.getPosterSize()}${item.poster_path}` : 
-                    'placeholder.jpg';
-                card.innerHTML = `
-                    <img src="${posterUrl}" loading="lazy" alt="${item.title}">
-                    <div class="theme1-card-title">${item.title}</div>
-                `;
-                card.addEventListener('click', () => {
-                    this.activeIndex = index;
-                    this.updateActiveCard();
-                    this.updateBackground();
-                    this.updateLogo();
-                    this.focusActive();
-                });
-                this.listElement.appendChild(card);
-            });
-        }
-
-        getPosterSize() {
-            // Адаптивный размер для карточек в зависимости от ширины экрана
-            const screenWidth = window.innerWidth;
-            return screenWidth > 1920 ? 'w500' : POSTER_SIZE_SMALL;
-        }
-
-        updateActiveCard() {
-            const cards = this.container.querySelectorAll('.theme1-card');
-            cards.forEach((card, idx) => {
-                card.classList.toggle('active', idx === this.activeIndex);
-            });
-            this.scrollToActive();
-        }
-
-        scrollToActive() {
-            const activeCard = this.container.querySelector(`.theme1-card[data-index="${this.activeIndex}"]`);
-            if (!activeCard || !this.listElement) return;
-            const containerWidth = this.listElement.parentElement.clientWidth;
-            const cardLeft = activeCard.offsetLeft;
-            const cardWidth = activeCard.offsetWidth;
-            const offset = cardLeft - (containerWidth / 2) + (cardWidth / 2);
-            this.listElement.style.transform = `translateX(${-offset}px)`;
-        }
-
-        updateBackground() {
-            if (!this.bgElement || !this.data[this.activeIndex]) return;
-            const item = this.data[this.activeIndex];
-            const bgUrl = item.backdrop_path ? 
-                `${POSTER_BASE}${POSTER_SIZE_LARGE}${item.backdrop_path}` : 
-                null;
-            if (bgUrl) {
-                this.bgElement.style.backgroundImage = `url(${bgUrl})`;
-                // Динамический цвет шапки
-                this.updateHeaderColor(bgUrl);
+            .hero-card {
+                flex: 3;
+                position: relative;
+                background-size: cover;
+                background-position: center center;
+                background-repeat: no-repeat;
+                width: 100%;
+                min-height: 70vh;
+                border-radius: 0 0 24px 24px;
+                transition: margin-top 0.2s;
             }
-        }
-
-        updateHeaderColor(imageUrl) {
-            if (!this.logoElement) return;
-            if (this.dominantColors[imageUrl]) {
-                document.querySelector('.theme1-header').style.background = this.dominantColors[imageUrl];
-                return;
+            .hero-card__overlay {
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.2), transparent);
+                padding: 40px 30px 30px;
+                color: white;
+                border-radius: 0 0 24px 24px;
             }
-            getDominantColor(imageUrl, (color) => {
-                this.dominantColors[imageUrl] = color;
-                const header = document.querySelector('.theme1-header');
-                if (header) header.style.background = color;
-            });
-        }
-
-        updateLogo() {
-            if (!this.logoElement || !this.data[this.activeIndex]) return;
-            const item = this.data[this.activeIndex];
-            const logoPath = item.logo_path; // или item.images?.logos?.[0]?.file_path
-            if (logoPath) {
-                const logoUrl = `${POSTER_BASE}${POSTER_SIZE_LOGO}${logoPath}`;
-                this.logoElement.innerHTML = `<img src="${logoUrl}" alt="logo">`;
-            } else {
-                this.logoElement.innerHTML = `<h2 style="color:white; margin:0;">${item.title}</h2>`;
+            .hero-card__logo {
+                max-width: 300px;
+                max-height: 80px;
+                object-fit: contain;
+                margin-bottom: 15px;
             }
-        }
-
-        focusActive() {
-            // Программный фокус для пульта
-            if (this._controller) {
-                Lampa.Controller.collect(this._controller);
+            .hero-card__title {
+                font-size: 2.5rem;
+                font-weight: bold;
+                text-shadow: 0 2px 5px black;
+                margin-bottom: 10px;
             }
-        }
-
-        moveLeft() {
-            if (this.data.length === 0) return;
-            this.activeIndex = (this.activeIndex - 1 + this.data.length) % this.data.length;
-            this.updateActiveCard();
-            this.updateBackground();
-            this.updateLogo();
-        }
-
-        moveRight() {
-            if (this.data.length === 0) return;
-            this.activeIndex = (this.activeIndex + 1) % this.data.length;
-            this.updateActiveCard();
-            this.updateBackground();
-            this.updateLogo();
-        }
-
-        openItem() {
-            const item = this.data[this.activeIndex];
-            if (item) {
-                Lampa.Controller.toggle('theme1'); // скрыть карусель
-                // Открыть карточку фильма (зависит от Lampa)
-                if (typeof Lampa.Player !== 'undefined') {
-                    Lampa.Player.play(item);
-                } else {
-                    Lampa.Navigation.push({ url: `/movie/${item.id}` });
-                }
+            .hero-card__info {
+                font-size: 1rem;
+                display: flex;
+                gap: 20px;
+                margin-bottom: 10px;
             }
-        }
-
-        bindController() {
-            // Корректное сохранение ссылок на обработчики
-            this._handlers = [
-                { event: 'left', handler: () => this.moveLeft() },
-                { event: 'right', handler: () => this.moveRight() },
-                { event: 'enter', handler: () => this.openItem() },
-                { event: 'back', handler: () => Lampa.Controller.toggle('menu') }
-            ];
-            this._handlers.forEach(({ event, handler }) => {
-                Lampa.Controller.add(event, handler, PLUGIN_NAME);
-            });
-        }
-
-        unbindController() {
-            // Удаляем только свои обработчики
-            this._handlers.forEach(({ event, handler }) => {
-                Lampa.Controller.remove(event, handler);
-            });
-            this._handlers = [];
-        }
-
-        destroy() {
-            this.unbindController();
-            if (this.container) {
-                this.container.remove();
-                this.container = null;
+            .hero-card__overview {
+                font-size: 0.9rem;
+                max-width: 60%;
+                line-height: 1.4;
+                display: -webkit-box;
+                -webkit-line-clamp: 3;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+                margin-bottom: 15px;
             }
-            // Очистка кэша доминирующих цветов
-            this.dominantColors = {};
-        }
-
-        toggle() {
-            // Метод для показа/скрытия
-            if (!this.container) {
-                this.render();
-                this.loadData();
+            .hero-card__meta {
+                font-size: 0.8rem;
+                opacity: 0.8;
+                margin-bottom: 15px;
             }
-        }
+            .hero-card__button {
+                background: rgba(255,255,255,0.25);
+                border: 1px solid rgba(255,255,255,0.5);
+                padding: 10px 25px;
+                border-radius: 40px;
+                display: inline-block;
+                cursor: pointer;
+                transition: 0.2s;
+                font-size: 1rem;
+            }
+            .hero-card__button:hover {
+                background: rgba(255,255,255,0.45);
+            }
+            .carousel-strip {
+                flex: 1;
+                padding: 20px 0;
+                overflow-x: auto;
+                overflow-y: hidden;
+                scrollbar-width: thin;
+                background: linear-gradient(to top, #000, transparent);
+            }
+            .carousel-strip__inner {
+                display: flex;
+                gap: 18px;
+                padding: 0 30px;
+                align-items: center;
+                height: 100%;
+            }
+            .strip-card {
+                flex-shrink: 0;
+                width: 180px;
+                transition: all 0.25s ease;
+                cursor: pointer;
+                border-radius: 16px;
+                overflow: hidden;
+                box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+                transform-origin: center;
+                background: #111;
+            }
+            .strip-card__poster {
+                width: 100%;
+                aspect-ratio: 2 / 3;
+                object-fit: cover;
+                display: block;
+            }
+            .strip-card.selected {
+                transform: scale(1.5);
+                margin: 0 25px;
+                z-index: 2;
+                box-shadow: 0 12px 28px rgba(0,0,0,0.6);
+            }
+            .strip-card:not(.selected) {
+                transform: scale(0.9);
+                filter: brightness(0.7);
+            }
+            @media (max-width: 768px) {
+                .hero-card__title { font-size: 1.5rem; }
+                .hero-card__overview { max-width: 100%; font-size: 0.75rem; }
+                .strip-card { width: 120px; }
+                .strip-card.selected { transform: scale(1.3); margin: 0 15px; }
+                .hero-card__logo { max-width: 180px; }
+            }
+        `;
+        document.head.appendChild(style);
     }
 
-    // Запуск плагина
-    const plugin = new Theme1Plugin();
-    Lampa.Plugins.register(plugin);
-    plugin.init();
+    function replaceMainComponent() {
+        if (Lampa.Component.get('main') === HeroMainComponent) return;
+        Lampa.Component.add('main', HeroMainComponent);
+        console.log('HeroCarousel TV: компонент main заменён');
+    }
 
+    Lampa.Listener.follow('app', function(e) {
+        if (e.type === 'ready') {
+            addStyles();
+            replaceMainComponent();
+        }
+    });
 })();
