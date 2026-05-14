@@ -1,441 +1,195 @@
-// Плагин: Hero-карусель для Lampa (ТВ-версия с логотипами, адаптивная шапка, нормальные карточки)
-(function() {
+/**
+ * Плагин Netflix Theme для Lampa
+ * Установка: Добавьте ссылку на этот файл в настройках Lampa → "Расширения"
+ * Версия: 1.0.0
+ * Автор: Ваше имя
+ */
+(function () {
     'use strict';
 
-    var HeroMainComponent = function(object) {
-        Lampa.Emit.call(this);
-        this.object = object || {};
-        this.params = object.params || {};
-        this.allItems = [];
-        this.currentIndex = 0;
-        this.html = null;
-        this.heroDiv = null;
-        this.carouselDiv = null;
-        this.carouselInner = null;
-        this.activity = null;
-        this.originalHeadDownHandler = null;
-    };
-    HeroMainComponent.prototype = Object.create(Lampa.Emit.prototype);
-    HeroMainComponent.prototype.constructor = HeroMainComponent;
+    // Уникальный флаг, чтобы плагин не запускался повторно
+    if (window.netflix_theme_loaded) return;
+    window.netflix_theme_loaded = true;
 
-    HeroMainComponent.prototype.create = function() {
-        this.html = document.createElement('div');
-        this.html.className = 'hero-carousel-container';
-        this.heroDiv = document.createElement('div');
-        this.heroDiv.className = 'hero-card';
-        this.carouselDiv = document.createElement('div');
-        this.carouselDiv.className = 'carousel-strip';
-        this.carouselInner = document.createElement('div');
-        this.carouselInner.className = 'carousel-strip__inner';
-        this.carouselDiv.appendChild(this.carouselInner);
-        this.html.appendChild(this.heroDiv);
-        this.html.appendChild(this.carouselDiv);
-        this.loadData();
-        this.emit('create');
-    };
+    /**
+     * Основная функция, которая запускает плагин, когда приложение готово.
+     * Ждет событие 'app' с типом 'ready', чтобы DOM был полностью построен.
+     */
+    function startPlugin() {
+        // 1. Активируем тему: добавляем класс к body и внедряем CSS
+        activateNetflixTheme();
+    }
 
-    HeroMainComponent.prototype.loadData = function() {
-        var self = this;
-        if (this.activity) this.activity.loader(true);
-        Lampa.Api.main(this.object, function(lines) {
-            self.allItems = [];
-            lines.forEach(function(line) {
-                if (line.results && line.results.length) {
-                    self.allItems = self.allItems.concat(line.results);
-                }
-            });
-            if (self.allItems.length === 0) {
-                self.showEmpty();
-                return;
-            }
-            self.currentIndex = 0;
-            self.renderHero(self.allItems[0]);
-            self.renderCarousel();
-            if (self.activity) self.activity.loader(false);
-            self.emit('build');
-        }, function(err) {
-            if (self.activity) self.activity.loader(false);
-            self.showEmpty();
-        });
-    };
-
-    HeroMainComponent.prototype.renderHero = function(item) {
-        if (!this.heroDiv) return;
-        var backUrl = Lampa.Api.img(item.backdrop_path || item.poster_path || item.img, 'w1280');
-        this.heroDiv.style.backgroundImage = 'url(' + backUrl + ')';
-        this.heroDiv.innerHTML = '';
-        var overlay = document.createElement('div');
-        overlay.className = 'hero-card__overlay';
-        var logoHtml = '';
-        if (item.logo_path) {
-            logoHtml = `<img class="hero-card__logo" src="${Lampa.Api.img(item.logo_path, 'w500')}" alt="${item.title || item.name}">`;
-        } else {
-            logoHtml = `<div class="hero-card__title">${item.title || item.name || ''}</div>`;
+    /**
+     * Добавляет класс "netflix-theme" к body и внедряет кастомные стили.
+     * Класс на body позволяет переключать тему через CSS-селекторы.
+     */
+    function activateNetflixTheme() {
+        // Добавляем класс к body, если его еще нет
+        if (!document.body.classList.contains('netflix-theme')) {
+            document.body.classList.add('netflix-theme');
         }
-        var year = (item.release_date || item.first_air_date || '').slice(0,4);
-        var rating = (item.vote_average || 0).toFixed(1);
-        var overview = (item.overview || 'Нет описания').slice(0, 200);
-        if (item.overview && item.overview.length > 200) overview += '...';
-        overlay.innerHTML = `
-            ${logoHtml}
-            <div class="hero-card__info">
-                <span>${year}</span>
-                <span>⭐ ${rating}</span>
-            </div>
-            <div class="hero-card__overview">${overview}</div>
-            <div class="hero-card__meta">Актёры и режиссёр загружаются...</div>
-            <div class="hero-card__button selector">Смотреть</div>
-        `;
-        this.heroDiv.appendChild(overlay);
-        this.loadCast(item);
-        this.fetchLogo(item);
-        this.adjustHeadColor(backUrl);
-        this.adjustHeadMargin();
-        var watchBtn = overlay.querySelector('.hero-card__button');
-        if (watchBtn) {
-            watchBtn.on('hover:enter', function() {
-                Lampa.Activity.push({
-                    url: '',
-                    component: 'full',
-                    id: item.id,
-                    method: item.name ? 'tv' : 'movie',
-                    card: item,
-                    source: item.source || 'tmdb'
-                });
-            });
-        }
-    };
 
-    HeroMainComponent.prototype.adjustHeadMargin = function() {
-        var head = document.querySelector('.head');
-        if (head) {
-            var headHeight = head.offsetHeight;
-            this.heroDiv.style.marginTop = headHeight + 'px';
-        }
-    };
+        // Внедряем CSS-стили в <head>
+        injectNetflixStyles();
+    }
 
-    HeroMainComponent.prototype.adjustHeadColor = function(imageUrl) {
-        var img = new Image();
-        img.crossOrigin = 'Anonymous';
-        img.onload = function() {
-            var canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            var ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, img.width, img.height);
-            var data = ctx.getImageData(0, 0, img.width, img.height).data;
-            var r = 0, g = 0, b = 0, count = 0;
-            for (var i = 0; i < data.length; i += 4) {
-                r += data[i];
-                g += data[i+1];
-                b += data[i+2];
-                count++;
+    /**
+     * Создает элемент <style> и добавляет его в <head>.
+     * Содержит все визуальные переопределения для темы Netflix.
+     */
+    function injectNetflixStyles() {
+        // Проверяем, не добавлены ли стили ранее
+        if (document.getElementById('netflix-theme-styles')) return;
+
+        var styleEl = document.createElement('style');
+        styleEl.id = 'netflix-theme-styles';
+        styleEl.textContent = getNetflixCSS();
+        document.head.appendChild(styleEl);
+    }
+
+    /**
+     * Возвращает строку с CSS-правилами, которые формируют облик Netflix.
+     * Вы можете настраивать цвета, размеры и эффекты под свои предпочтения.
+     */
+    function getNetflixCSS() {
+        return `
+            /* ---------------------------------------------------------- */
+            /*  Netflix Theme CSS                                         */
+            /* ---------------------------------------------------------- */
+
+            /* === 1. Глобальные настройки === */
+            body.netflix-theme {
+                --netflix-red: #E50914;
+                --netflix-dark: #141414;
+                --netflix-dark-secondary: #1f1f1f;
+                --netflix-gray: #808080;
+                --netflix-light-gray: #b3b3b3;
+                --netflix-white: #ffffff;
+                --netflix-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+
+                background-color: var(--netflix-dark) !important;
+                color: var(--netflix-white) !important;
+                font-family: var(--netflix-font) !important;
             }
-            r = Math.floor(r / count);
-            g = Math.floor(g / count);
-            b = Math.floor(b / count);
-            var brightness = (r * 0.299 + g * 0.587 + b * 0.114);
-            var head = document.querySelector('.head');
-            if (head) {
-                head.style.backgroundColor = `rgba(${r}, ${g}, ${b}, 0.85)`;
-                head.style.color = brightness > 128 ? '#000' : '#fff';
-                var logo = head.querySelector('.head__logo-icon svg, .head__logo-icon img');
-                if (logo) logo.style.filter = brightness > 128 ? 'invert(1)' : 'none';
+
+            /* === 2. Верхняя панель (навигация) === */
+            body.netflix-theme .head {
+                background-color: var(--netflix-dark) !important;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             }
-        };
-        img.src = imageUrl;
-    };
-
-    HeroMainComponent.prototype.fetchLogo = function(item) {
-        if (item.logo_path) return;
-        var source = item.source || 'tmdb';
-        var api = Lampa.Api.sources[source];
-        if (!api || !api.get) return;
-        var method = item.name ? 'tv' : 'movie';
-        api.get(method + '/' + item.id + '/images', {}, function(images) {
-            var logos = (images.logos || []).filter(l => l.iso_639_1 === 'en' || l.iso_639_1 === 'ru');
-            if (logos.length) {
-                item.logo_path = logos[0].file_path;
-                this.renderHero(item);
+            body.netflix-theme .head__search input {
+                background-color: rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                color: var(--netflix-white);
             }
-        }.bind(this), function() {});
-    };
 
-    HeroMainComponent.prototype.loadCast = function(item) {
-        if (!item.id) return;
-        var source = item.source || 'tmdb';
-        var api = Lampa.Api.sources[source];
-        if (!api || !api.get) return;
-        var method = item.name ? 'tv' : 'movie';
-        api.get(method + '/' + item.id + '/credits', {}, function(credits) {
-            var actors = (credits.cast || []).slice(0, 3).map(a => a.name).join(', ');
-            var director = (credits.crew || []).find(c => c.job === 'Director');
-            var directorName = director ? director.name : '';
-            var metaDiv = this.heroDiv?.querySelector('.hero-card__meta');
-            if (metaDiv) {
-                metaDiv.innerHTML = `<span>Режиссёр: ${directorName}</span> | <span>В ролях: ${actors || '—'}</span>`;
+            /* === 3. Боковое меню (Sidebar) === */
+            body.netflix-theme .sidebar {
+                background-color: var(--netflix-dark) !important;
             }
-        }.bind(this), function() {});
-    };
-
-    HeroMainComponent.prototype.renderCarousel = function() {
-        if (!this.carouselInner) return;
-        this.carouselInner.innerHTML = '';
-        var self = this;
-        this.allItems.forEach(function(item, idx) {
-            var card = document.createElement('div');
-            card.className = 'strip-card' + (idx === self.currentIndex ? ' selected' : '');
-            card.setAttribute('data-index', idx);
-            card.classList.add('selector');
-            var img = document.createElement('img');
-            img.className = 'strip-card__poster';
-            img.src = Lampa.Api.img(item.poster_path || item.img, 'w300');
-            img.onerror = function() { img.src = './img/img_broken.svg'; };
-            card.appendChild(img);
-            card.on('hover:enter', function() {
-                self.setCurrentIndex(idx);
-            });
-            self.carouselInner.appendChild(card);
-        });
-        setTimeout(function() { self.scrollToSelected(); }, 100);
-    };
-
-    HeroMainComponent.prototype.scrollToSelected = function() {
-        var selected = this.carouselInner.querySelector('.strip-card.selected');
-        if (selected) selected.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-    };
-
-    HeroMainComponent.prototype.setCurrentIndex = function(newIndex) {
-        if (newIndex === this.currentIndex) return;
-        this.currentIndex = newIndex;
-        this.renderHero(this.allItems[newIndex]);
-        var cards = this.carouselInner.querySelectorAll('.strip-card');
-        cards.forEach(function(card, i) {
-            if (i === newIndex) card.classList.add('selected');
-            else card.classList.remove('selected');
-        });
-        this.scrollToSelected();
-    };
-
-    HeroMainComponent.prototype.showEmpty = function() {
-        var empty = new Lampa.Empty({ title: 'Ничего не найдено', descr: 'Попробуйте позже' });
-        if (this.html) {
-            this.html.innerHTML = '';
-            this.html.appendChild(empty.render(true));
-        }
-        if (this.activity) this.activity.loader(false);
-        empty.start();
-    };
-
-    HeroMainComponent.prototype.start = function() {
-        var self = this;
-        Lampa.Controller.add('hero_carousel', {
-            toggle: function() {
-                Lampa.Controller.collectionSet(self.carouselInner);
-                var selected = self.carouselInner.querySelector('.strip-card.selected');
-                Lampa.Controller.collectionFocus(selected, self.carouselInner);
-            },
-            right: function() {
-                if (self.currentIndex < self.allItems.length - 1) {
-                    self.setCurrentIndex(self.currentIndex + 1);
-                }
-            },
-            left: function() {
-                if (self.currentIndex > 0) {
-                    self.setCurrentIndex(self.currentIndex - 1);
-                }
-            },
-            up: function() {
-                // Переключаем фокус на head, но сохраняем возможность вернуться
-                var headController = Lampa.Controller.enabled().name;
-                if (headController !== 'head') {
-                    self.originalHeadDownHandler = null;
-                    Lampa.Controller.toggle('head');
-                    // Переопределяем обработчик down в head, чтобы вернуться
-                    var originalToggle = Lampa.Controller.controlls.head.toggle;
-                    Lampa.Controller.controlls.head.down = function() {
-                        Lampa.Controller.toggle('hero_carousel');
-                        // Восстанавливаем оригинальный down
-                        Lampa.Controller.controlls.head.down = originalToggle;
-                    };
-                }
-            },
-            down: function() {
-                // Уже в карусели, ничего не делаем
-            },
-            enter: function() {
-                var item = self.allItems[self.currentIndex];
-                Lampa.Activity.push({
-                    url: '',
-                    component: 'full',
-                    id: item.id,
-                    method: item.name ? 'tv' : 'movie',
-                    card: item,
-                    source: item.source || 'tmdb'
-                });
-            },
-            back: function() {
-                Lampa.Activity.backward();
+            body.netflix-theme .menu__item {
+                color: var(--netflix-light-gray) !important;
+                transition: color 0.2s;
             }
-        });
-        Lampa.Controller.toggle('hero_carousel');
-        this.emit('start');
-    };
+            body.netflix-theme .menu__item:hover,
+            body.netflix-theme .menu__item.active {
+                color: var(--netflix-white) !important;
+                background-color: rgba(255, 255, 255, 0.1);
+            }
 
-    HeroMainComponent.prototype.pause = function() {};
-    HeroMainComponent.prototype.stop = function() {};
-    HeroMainComponent.prototype.destroy = function() {
-        if (this.html) this.html.remove();
-        Lampa.Controller.clear();
-        this.emit('destroy');
-    };
-    HeroMainComponent.prototype.render = function(js) {
-        return js ? this.html : $(this.html);
-    };
-
-    function addStyles() {
-        if (document.getElementById('hero-carousel-styles')) return;
-        var style = document.createElement('style');
-        style.id = 'hero-carousel-styles';
-        style.textContent = `
-            .hero-carousel-container {
-                width: 100%;
-                height: 100%;
-                display: flex;
-                flex-direction: column;
-                background: #000;
+            /* === 4. Карточки фильмов (постеры) === */
+            body.netflix-theme .card {
+                border-radius: 4px;
                 overflow: hidden;
+                transition: transform 0.3s, box-shadow 0.3s;
             }
-            .hero-card {
-                flex: 3;
-                position: relative;
-                background-size: cover;
-                background-position: center center;
-                background-repeat: no-repeat;
-                width: 100%;
-                min-height: 70vh;
-                border-radius: 0 0 24px 24px;
-                transition: margin-top 0.2s;
+            body.netflix-theme .card:hover {
+                transform: scale(1.05);
+                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+                z-index: 10;
             }
-            .hero-card__overlay {
-                position: absolute;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.2), transparent);
-                padding: 40px 30px 30px;
-                color: white;
-                border-radius: 0 0 24px 24px;
+            body.netflix-theme .card__img {
+                border-radius: 4px;
             }
-            .hero-card__logo {
-                max-width: 300px;
-                max-height: 80px;
-                object-fit: contain;
-                margin-bottom: 15px;
-            }
-            .hero-card__title {
-                font-size: 2.5rem;
+
+            /* === 5. Кнопки и акцентные элементы === */
+            body.netflix-theme .button {
+                background-color: var(--netflix-red) !important;
+                border: none !important;
+                border-radius: 2px;
+                color: var(--netflix-white) !important;
                 font-weight: bold;
-                text-shadow: 0 2px 5px black;
-                margin-bottom: 10px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
             }
-            .hero-card__info {
-                font-size: 1rem;
-                display: flex;
-                gap: 20px;
-                margin-bottom: 10px;
+            body.netflix-theme .button:hover {
+                background-color: #f40612 !important;
             }
-            .hero-card__overview {
-                font-size: 0.9rem;
-                max-width: 60%;
-                line-height: 1.4;
-                display: -webkit-box;
-                -webkit-line-clamp: 3;
-                -webkit-box-orient: vertical;
-                overflow: hidden;
-                margin-bottom: 15px;
+
+            /* === 6. Детальная страница (full-start) === */
+            body.netflix-theme .full-start {
+                background-color: var(--netflix-dark) !important;
             }
-            .hero-card__meta {
-                font-size: 0.8rem;
-                opacity: 0.8;
-                margin-bottom: 15px;
+            body.netflix-theme .full-start__title {
+                font-size: 2.5em;
+                font-weight: 700;
             }
-            .hero-card__button {
-                background: rgba(255,255,255,0.25);
-                border: 1px solid rgba(255,255,255,0.5);
-                padding: 10px 25px;
-                border-radius: 40px;
-                display: inline-block;
-                cursor: pointer;
-                transition: 0.2s;
-                font-size: 1rem;
+            body.netflix-theme .full-start__background {
+                opacity: 0.4;
             }
-            .hero-card__button:hover {
-                background: rgba(255,255,255,0.45);
+
+            /* === 7. Строка поиска и фильтры === */
+            body.netflix-theme .search-box input {
+                background-color: rgba(255, 255, 255, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.4);
+                color: var(--netflix-white);
             }
-            .carousel-strip {
-                flex: 1;
-                padding: 20px 0;
-                overflow-x: auto;
-                overflow-y: hidden;
-                scrollbar-width: thin;
-                background: linear-gradient(to top, #000, transparent);
+
+            /* === 8. Футер (нижняя часть) === */
+            body.netflix-theme .footer {
+                background-color: var(--netflix-dark) !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
             }
-            .carousel-strip__inner {
-                display: flex;
-                gap: 18px;
-                padding: 0 30px;
-                align-items: center;
-                height: 100%;
+
+            /* === 9. Анимация появления контента === */
+            body.netflix-theme .items-line {
+                animation: fadeInUp 0.5s ease-out;
             }
-            .strip-card {
-                flex-shrink: 0;
-                width: 180px;
-                transition: all 0.25s ease;
-                cursor: pointer;
-                border-radius: 16px;
-                overflow: hidden;
-                box-shadow: 0 6px 18px rgba(0,0,0,0.4);
-                transform-origin: center;
-                background: #111;
+            @keyframes fadeInUp {
+                from {
+                    opacity: 0;
+                    transform: translateY(20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
             }
-            .strip-card__poster {
-                width: 100%;
-                aspect-ratio: 2 / 3;
-                object-fit: cover;
-                display: block;
+
+            /* === 10. Скроллбар (по желанию) === */
+            body.netflix-theme ::-webkit-scrollbar {
+                width: 6px;
             }
-            .strip-card.selected {
-                transform: scale(1.5);
-                margin: 0 25px;
-                z-index: 2;
-                box-shadow: 0 12px 28px rgba(0,0,0,0.6);
+            body.netflix-theme ::-webkit-scrollbar-track {
+                background: var(--netflix-dark);
             }
-            .strip-card:not(.selected) {
-                transform: scale(0.9);
-                filter: brightness(0.7);
-            }
-            @media (max-width: 768px) {
-                .hero-card__title { font-size: 1.5rem; }
-                .hero-card__overview { max-width: 100%; font-size: 0.75rem; }
-                .strip-card { width: 120px; }
-                .strip-card.selected { transform: scale(1.3); margin: 0 15px; }
-                .hero-card__logo { max-width: 180px; }
+            body.netflix-theme ::-webkit-scrollbar-thumb {
+                background: var(--netflix-gray);
+                border-radius: 3px;
             }
         `;
-        document.head.appendChild(style);
     }
 
-    function replaceMainComponent() {
-        if (Lampa.Component.get('main') === HeroMainComponent) return;
-        Lampa.Component.add('main', HeroMainComponent);
-        console.log('HeroCarousel TV: компонент main заменён');
+    // Запускаем плагин, когда приложение готово.
+    // Если приложение уже загружено (window.appready), стартуем немедленно.
+    if (window.appready) {
+        startPlugin();
+    } else {
+        Lampa.Listener.follow('app', function (event) {
+            if (event.type === 'ready') {
+                startPlugin();
+            }
+        });
     }
-
-    Lampa.Listener.follow('app', function(e) {
-        if (e.type === 'ready') {
-            addStyles();
-            replaceMainComponent();
-        }
-    });
 })();
