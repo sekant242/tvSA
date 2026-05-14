@@ -1,81 +1,116 @@
-// kodi-theme.js
+/*
+   Kodi Theme Plugin for Lampa
+   Версия: 1.0.1
+*/
 (function() {
     'use strict';
 
-    const THEME_ID = 'kodi_theme';
-    const STYLE_ID = 'kodi-theme-styles';
-
-    // Основные стили в духе темы Kodi Estuary
-    const kodiCSS = `
-        /* Фон */
-        body.${THEME_ID} {
-            background-color: #0d1b2a !important; /* Темно-синий фон как в Kodi */
-        }
-        
-        /* Карточки контента */
-        body.${THEME_ID} .card {
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-            background: #1b2a3a;
-        }
-        
-        /* Боковое меню */
-        body.${THEME_ID} .menu {
-            background: #0b1622;
-        }
-        
-        /* Верхняя панель навигации */
-        body.${THEME_ID} .head {
-            background: #132233;
-        }
-        
-        /* Цвета и шрифты можно гибко настраивать */
-    `;
-
-    // Создаем элемент <style> и добавляем его в <head>
-    function injectStyles() {
-        if (document.getElementById(STYLE_ID)) return;
-        const styleEl = document.createElement('style');
-        styleEl.id = STYLE_ID;
-        styleEl.textContent = kodiCSS;
-        document.head.appendChild(styleEl);
-    }
-
-    // Переключение темы
-    function toggleTheme(enable) {
-        if (enable) {
-            document.body.classList.add(THEME_ID);
+    // Дожидаемся, пока объект Lampa станет доступен
+    function waitForLampa(callback) {
+        if (window.Lampa) {
+            callback();
         } else {
-            document.body.classList.remove(THEME_ID);
+            setTimeout(() => waitForLampa(callback), 100);
         }
-        // Сохраняем выбор пользователя в настройках
-        Lampa.Storage.set('kodi_theme_enabled', enable);
     }
 
-    // Инициализация плагина
-    function init() {
-        injectStyles();
-        
-        // Восстанавливаем состояние темы
-        const enabled = Lampa.Storage.get('kodi_theme_enabled', false);
-        toggleTheme(enabled);
+    // Основная логика
+    function startPlugin() {
+        Lampa.Plugins.register({
+            name: 'Kodi Theme',
+            version: '1.0.1',
+            author: 'YourName',
+            description: 'Визуальная тема в стиле Kodi Estuary',
+            onStart: function() {
+                // Инжектим стили
+                const styleId = 'kodi-theme-style';
+                if (!document.getElementById(styleId)) {
+                    const style = document.createElement('style');
+                    style.id = styleId;
+                    style.textContent = `
+                        /* Тёмный фон в стиле Kodi */
+                        body.kodi-theme-active {
+                            background-color: #0d1b2a !important;
+                        }
 
-        // Добавляем переключатель в меню настроек (пример)
-        Lampa.Settings.add({
-            id: 'kodi_theme_toggle',
-            title: 'Тема Kodi',
-            type: 'toggle',
-            value: enabled,
-            onChange: function(value) {
-                toggleTheme(value);
+                        /* Карточки */
+                        body.kodi-theme-active .card,
+                        body.kodi-theme-active .poster {
+                            border-radius: 8px;
+                            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+                            background: #1b2a3a;
+                        }
+
+                        /* Боковое меню */
+                        body.kodi-theme-active .menu,
+                        body.kodi-theme-active .side-menu {
+                            background: #0b1622;
+                        }
+
+                        /* Шапка */
+                        body.kodi-theme-active .head,
+                        body.kodi-theme-active .header {
+                            background: #132233;
+                        }
+
+                        /* Текст */
+                        body.kodi-theme-active, 
+                        body.kodi-theme-active .title, 
+                        body.kodi-theme-active .text {
+                            color: #e0e0e0;
+                        }
+
+                        /* Дополнительные акценты можно добавить здесь */
+                    `;
+                    document.head.appendChild(style);
+                }
+
+                // Восстановление состояния темы
+                const isEnabled = Lampa.Storage.get('kodi_theme_on', false);
+                if (isEnabled) {
+                    document.body.classList.add('kodi-theme-active');
+                }
+
+                // Добавляем переключатель в раздел «Расширения»
+                // Используем встроенные возможности Lampa для создания пункта в меню
+                Lampa.Listener.follow('extensions', function(e) {
+                    // Проверяем, что это нужное событие открытия расширений
+                    if (e.name === 'open') {
+                        // Добавляем кнопку в список активных плагинов
+                        Lampa.Extensions.add({
+                            name: 'Kodi Theme',
+                            icon: 'https://raw.githubusercontent.com/yumata/lampa/main/icons/theme.svg', // любая иконка
+                            description: 'Включить / выключить тему Kodi',
+                            onSelect: function() {
+                                const current = document.body.classList.toggle('kodi-theme-active');
+                                Lampa.Storage.set('kodi_theme_on', current);
+                                Lampa.Noty.show(current ? 'Тема Kodi включена' : 'Тема Kodi выключена');
+                            }
+                        });
+                    }
+                });
+
+                // Альтернативный быстрый способ – управление через меню настроек (если нужно)
+                // Этот код можно раскомментировать, если вы используете старую версию Lampa
+                /*
+                if (Lampa.Settings && Lampa.Settings.addBoolean) {
+                    Lampa.Settings.addBoolean({
+                        param: 'kodi_theme_on',
+                        name: 'Тема Kodi',
+                        default: false,
+                        onChange: function(value) {
+                            if (value) {
+                                document.body.classList.add('kodi-theme-active');
+                            } else {
+                                document.body.classList.remove('kodi-theme-active');
+                            }
+                        }
+                    });
+                }
+                */
             }
         });
     }
 
-    // Запускаем, когда Lampa готов
-    if (window.Lampa) {
-        init();
-    } else {
-        window.addEventListener('lampa_ready', init);
-    }
+    waitForLampa(startPlugin);
 })();
