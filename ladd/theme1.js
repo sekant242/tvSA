@@ -1,192 +1,139 @@
-/**
- * Плагин Netflix Theme для Lampa
- * Установка: Добавьте ссылку на этот файл в настройках Lampa → "Расширения"
- * Версия: 1.0.0
- * Автор: Ваше имя
- */
-(function () {
+(function() {
     'use strict';
 
-    // Уникальный флаг, чтобы плагин не запускался повторно
     if (window.netflix_theme_loaded) return;
     window.netflix_theme_loaded = true;
 
-    /**
-     * Основная функция, которая запускает плагин, когда приложение готово.
-     * Ждет событие 'app' с типом 'ready', чтобы DOM был полностью построен.
-     */
     function startPlugin() {
-        // 1. Активируем тему: добавляем класс к body и внедряем CSS
-        activateNetflixTheme();
-    }
+        // Внедрение CSS в head
+        const styleId = 'netflix-theme-style';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+                /* =============================================
+                   NETFLIX THEME FOR LAMPA — CSS RULES
+                   ============================================= */
 
-    /**
-     * Добавляет класс "netflix-theme" к body и внедряет кастомные стили.
-     * Класс на body позволяет переключать тему через CSS-селекторы.
-     */
-    function activateNetflixTheme() {
-        // Добавляем класс к body, если его еще нет
-        if (!document.body.classList.contains('netflix-theme')) {
-            document.body.classList.add('netflix-theme');
+                /* 1. Основной фон страницы */
+                body.netflix-theme,
+                .view {
+                    background-color: #141414 !important;
+                    color: #e5e5e5 !important;
+                }
+
+                /* 2. Цвета акцентов */
+                body.netflix-theme .button--primary,
+                body.netflix-theme .settings__button,
+                body.netflix-theme .selector--selected,
+                body.netflix-theme .full-start__play {
+                    background-color: #e50914 !important;
+                    border-color: #e50914 !important;
+                    color: #ffffff !important;
+                }
+
+                /* 3. Шрифты */
+                body.netflix-theme,
+                body.netflix-theme .card__title,
+                body.netflix-theme .full-start__title,
+                body.netflix-theme .modal__title {
+                    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
+                    font-weight: 400 !important;
+                    letter-spacing: 0.02em !important;
+                }
+
+                /* 4. Стили карточек */
+                body.netflix-theme .card__view {
+                    border-radius: 4px !important;
+                    overflow: hidden;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+                }
+
+                body.netflix-theme .card:hover .card__view {
+                    transform: scale(1.05);
+                    transition: transform 0.3s ease-in-out;
+                }
+
+                body.netflix-theme .card__img {
+                    border-radius: 4px !important;
+                }
+
+                body.netflix-theme .card__title {
+                    font-size: 1rem !important;
+                    font-weight: 500 !important;
+                    color: #ffffff !important;
+                    margin-top: 8px !important;
+                }
+
+                /* 5. Верхняя панель навигации */
+                body.netflix-theme .head {
+                    background-color: rgba(20, 20, 20, 0.95) !important;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+                }
+
+                /* 6. Боковое меню */
+                body.netflix-theme .menu {
+                    background-color: #141414 !important;
+                    border-right: 1px solid #333;
+                }
+
+                /* 7. Прокрутка */
+                body.netflix-theme ::-webkit-scrollbar-thumb {
+                    background: #e50914 !important;
+                    border-radius: 4px;
+                }
+
+                /* 8. Эффект размытия для фона (glass) */
+                body.netflix-theme .glass--style .modal,
+                body.netflix-theme .glass--style .full-start {
+                    backdrop-filter: blur(12px);
+                    background-color: rgba(20, 20, 20, 0.7) !important;
+                }
+
+                /* 9. Футер */
+                body.netflix-theme .footer {
+                    background-color: #141414 !important;
+                    border-top: 1px solid #333;
+                }
+            `;
+            document.head.appendChild(style);
         }
 
-        // Внедряем CSS-стили в <head>
-        injectNetflixStyles();
-    }
+        // Активация темы — добавляем класс body
+        document.body.classList.add('netflix-theme');
 
-    /**
-     * Создает элемент <style> и добавляет его в <head>.
-     * Содержит все визуальные переопределения для темы Netflix.
-     */
-    function injectNetflixStyles() {
-        // Проверяем, не добавлены ли стили ранее
-        if (document.getElementById('netflix-theme-styles')) return;
+        // Добавление переключателя в настройки
+        if (window.Lampa && Lampa.SettingsApi) {
+            // Регистрируем секцию с настройками плагина
+            Lampa.SettingsApi.addComponent({
+                id: 'netflix_theme',
+                name: 'Netflix Theme',
+                icon: 'theme',
+                type: 'default'
+            });
 
-        var styleEl = document.createElement('style');
-        styleEl.id = 'netflix-theme-styles';
-        styleEl.textContent = getNetflixCSS();
-        document.head.appendChild(styleEl);
-    }
-
-    /**
-     * Возвращает строку с CSS-правилами, которые формируют облик Netflix.
-     * Вы можете настраивать цвета, размеры и эффекты под свои предпочтения.
-     */
-    function getNetflixCSS() {
-        return `
-            /* ---------------------------------------------------------- */
-            /*  Netflix Theme CSS                                         */
-            /* ---------------------------------------------------------- */
-
-            /* === 1. Глобальные настройки === */
-            body.netflix-theme {
-                --netflix-red: #E50914;
-                --netflix-dark: #141414;
-                --netflix-dark-secondary: #1f1f1f;
-                --netflix-gray: #808080;
-                --netflix-light-gray: #b3b3b3;
-                --netflix-white: #ffffff;
-                --netflix-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-
-                background-color: var(--netflix-dark) !important;
-                color: var(--netflix-white) !important;
-                font-family: var(--netflix-font) !important;
-            }
-
-            /* === 2. Верхняя панель (навигация) === */
-            body.netflix-theme .head {
-                background-color: var(--netflix-dark) !important;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            }
-            body.netflix-theme .head__search input {
-                background-color: rgba(255, 255, 255, 0.15);
-                border: 1px solid rgba(255, 255, 255, 0.3);
-                color: var(--netflix-white);
-            }
-
-            /* === 3. Боковое меню (Sidebar) === */
-            body.netflix-theme .sidebar {
-                background-color: var(--netflix-dark) !important;
-            }
-            body.netflix-theme .menu__item {
-                color: var(--netflix-light-gray) !important;
-                transition: color 0.2s;
-            }
-            body.netflix-theme .menu__item:hover,
-            body.netflix-theme .menu__item.active {
-                color: var(--netflix-white) !important;
-                background-color: rgba(255, 255, 255, 0.1);
-            }
-
-            /* === 4. Карточки фильмов (постеры) === */
-            body.netflix-theme .card {
-                border-radius: 4px;
-                overflow: hidden;
-                transition: transform 0.3s, box-shadow 0.3s;
-            }
-            body.netflix-theme .card:hover {
-                transform: scale(1.05);
-                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
-                z-index: 10;
-            }
-            body.netflix-theme .card__img {
-                border-radius: 4px;
-            }
-
-            /* === 5. Кнопки и акцентные элементы === */
-            body.netflix-theme .button {
-                background-color: var(--netflix-red) !important;
-                border: none !important;
-                border-radius: 2px;
-                color: var(--netflix-white) !important;
-                font-weight: bold;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }
-            body.netflix-theme .button:hover {
-                background-color: #f40612 !important;
-            }
-
-            /* === 6. Детальная страница (full-start) === */
-            body.netflix-theme .full-start {
-                background-color: var(--netflix-dark) !important;
-            }
-            body.netflix-theme .full-start__title {
-                font-size: 2.5em;
-                font-weight: 700;
-            }
-            body.netflix-theme .full-start__background {
-                opacity: 0.4;
-            }
-
-            /* === 7. Строка поиска и фильтры === */
-            body.netflix-theme .search-box input {
-                background-color: rgba(255, 255, 255, 0.2);
-                border: 1px solid rgba(255, 255, 255, 0.4);
-                color: var(--netflix-white);
-            }
-
-            /* === 8. Футер (нижняя часть) === */
-            body.netflix-theme .footer {
-                background-color: var(--netflix-dark) !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.1);
-            }
-
-            /* === 9. Анимация появления контента === */
-            body.netflix-theme .items-line {
-                animation: fadeInUp 0.5s ease-out;
-            }
-            @keyframes fadeInUp {
-                from {
-                    opacity: 0;
-                    transform: translateY(20px);
+            // Параметр включения/отключения
+            Lampa.SettingsApi.addParam({
+                component: 'netflix_theme',
+                name: 'enable',
+                type: 'trigger',
+                default: true,
+                onChange: function(value) {
+                    if (value) {
+                        document.body.classList.add('netflix-theme');
+                    } else {
+                        document.body.classList.remove('netflix-theme');
+                    }
                 }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
-
-            /* === 10. Скроллбар (по желанию) === */
-            body.netflix-theme ::-webkit-scrollbar {
-                width: 6px;
-            }
-            body.netflix-theme ::-webkit-scrollbar-track {
-                background: var(--netflix-dark);
-            }
-            body.netflix-theme ::-webkit-scrollbar-thumb {
-                background: var(--netflix-gray);
-                border-radius: 3px;
-            }
-        `;
+            });
+        }
     }
 
-    // Запускаем плагин, когда приложение готово.
-    // Если приложение уже загружено (window.appready), стартуем немедленно.
+    // Ждём инициализацию Lampa
     if (window.appready) {
         startPlugin();
     } else {
-        Lampa.Listener.follow('app', function (event) {
+        Lampa.Listener.follow('app', function(event) {
             if (event.type === 'ready') {
                 startPlugin();
             }
