@@ -1,13 +1,16 @@
 /**
- * Плагин "Игры" для Lampa
- * Добавляет в боковое меню раздел с 5 мини-играми:
- * Змейка, Крестики-нолики, 2048, Тетрис, Пятнашки.
- * Управление: пульт ДУ (стрелки + Enter), мышь, сенсор.
+ * Плагин "Игры" для Lampa (ES5-совместимый)
+ * Боковое меню -> 5 игр: Змейка, Крестики-нолики, 2048, Тетрис, Пятнашки
  */
 (function () {
     'use strict';
 
-    // ========== Вспомогательные функции ==========
+    // Полифил для NodeList.forEach, если его нет
+    if (typeof NodeList !== 'undefined' && !NodeList.prototype.forEach) {
+        NodeList.prototype.forEach = Array.prototype.forEach;
+    }
+
+    // Вспомогательная функция: получить контекст canvas
     function getCanvasContext(id, width, height) {
         var canvas = document.getElementById(id);
         if (!canvas) return null;
@@ -16,9 +19,8 @@
         return canvas.getContext('2d');
     }
 
-    // Универсальная обработка направлений (пульт, мышь, тач)
+    // Универсальное управление направлениями (пульт/мышь/тач)
     function addDirectionControl(el, callback) {
-        // пульт (клавиатура)
         function keyHandler(e) {
             var dir = null;
             if (e.keyCode === 37) dir = 'left';
@@ -32,16 +34,17 @@
         }
         window.addEventListener('keydown', keyHandler);
 
-        // мышь и тач: по положению клика/касания относительно центра
         function pointerHandler(e) {
             var rect = el.getBoundingClientRect();
-            var x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-            var y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+            var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            var x = clientX - rect.left;
+            var y = clientY - rect.top;
             var cx = rect.width / 2;
             var cy = rect.height / 2;
             var dx = x - cx;
             var dy = y - cy;
-            if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return; // мёртвая зона
+            if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return;
             if (Math.abs(dx) > Math.abs(dy)) {
                 callback(dx > 0 ? 'right' : 'left');
             } else {
@@ -52,7 +55,6 @@
         el.addEventListener('click', pointerHandler);
         el.addEventListener('touchstart', pointerHandler, { passive: false });
 
-        // очистка
         el._cleanup = function () {
             window.removeEventListener('keydown', keyHandler);
             el.removeEventListener('click', pointerHandler);
@@ -60,7 +62,7 @@
         };
     }
 
-    // ========== 1. Змейка ==========
+    // ======================== ЗМЕЙКА ========================
     function SnakeGame(canvas, onExit) {
         var ctx = canvas.getContext('2d');
         var gridSize = 20;
@@ -71,6 +73,12 @@
         var nextDirection = { x: 0, y: 0 };
         var score = 0;
         var gameLoop = null;
+        var dirMap = {
+            'left':  { x: -1, y: 0 },
+            'up':    { x: 0, y: -1 },
+            'right': { x: 1, y: 0 },
+            'down':  { x: 0, y: 1 }
+        };
 
         function randomFood() {
             food.x = Math.floor(Math.random() * tileCount);
@@ -136,15 +144,8 @@
         gameLoop = setInterval(step, 100);
         draw();
 
-        var dirMap = {
-            'left': { x: -1, y: 0 },
-            'up': { x: 0, y: -1 },
-            'right': { x: 1, y: 0 },
-            'down': { x: 0, y: 1 }
-        };
         addDirectionControl(canvas, function (dir) {
             var newDir = dirMap[dir];
-            // запрет поворота назад
             if (direction.x !== -newDir.x || direction.y !== -newDir.y) {
                 nextDirection = newDir;
             }
@@ -153,7 +154,7 @@
         return { stop: function () { clearInterval(gameLoop); } };
     }
 
-    // ========== 2. Крестики-нолики ==========
+    // ======================== КРЕСТИКИ-НОЛИКИ ========================
     function TicTacToe(container, onExit) {
         var board = [['', '', ''], ['', '', ''], ['', '', '']];
         var currentPlayer = 'X';
@@ -164,7 +165,7 @@
             for (var y = 0; y < 3; y++) {
                 html += '<div class="tictactoe-row">';
                 for (var x = 0; x < 3; x++) {
-                    html += '<div class="tictactoe-cell" data-x="' + x + '" data-y="' + y + '">' + board[y][x] + '</div>';
+                    html += '<div class="tictactoe-cell" data-x="' + x + '" data-y="' + y + '" tabindex="0">' + board[y][x] + '</div>';
                 }
                 html += '</div>';
             }
@@ -173,22 +174,22 @@
             container.innerHTML = html;
 
             var cells = container.querySelectorAll('.tictactoe-cell');
-            cells.forEach(function (cell) {
-                cell.addEventListener('click', cellClick);
-            });
+            for (var i = 0; i < cells.length; i++) {
+                cells[i].addEventListener('click', cellClick);
+            }
             container.querySelector('.tictactoe-back').addEventListener('click', onExit);
 
-            // пульт: выделение первой клетки
-            var firstCell = container.querySelector('.tictactoe-cell');
-            if (firstCell) firstCell.focus();
+            // Выделим первую клетку для пульта
+            if (cells.length > 0) cells[0].focus();
         }
 
-        function cellClick(e) {
+        function cellClick() {
             if (!gameActive) return;
-            var x = parseInt(this.dataset.x);
-            var y = parseInt(this.dataset.y);
+            var x = parseInt(this.getAttribute('data-x'));
+            var y = parseInt(this.getAttribute('data-y'));
             if (board[y][x] !== '') return;
             board[y][x] = currentPlayer;
+
             if (checkWin(currentPlayer)) {
                 gameActive = false;
                 render();
@@ -213,11 +214,12 @@
 
         function computerMove() {
             if (!gameActive) return;
-            // простой ИИ: случайный ход
             var empty = [];
-            for (var y = 0; y < 3; y++)
-                for (var x = 0; x < 3; x++)
+            for (var y = 0; y < 3; y++) {
+                for (var x = 0; x < 3; x++) {
                     if (board[y][x] === '') empty.push({ x: x, y: y });
+                }
+            }
             if (empty.length === 0) return;
             var move = empty[Math.floor(Math.random() * empty.length)];
             board[move.y][move.x] = 'O';
@@ -233,27 +235,27 @@
         }
 
         function checkWin(player) {
-            var win = false;
-            // горизонтали, вертикали, диагонали
             for (var i = 0; i < 3; i++) {
-                if (board[i][0] === player && board[i][1] === player && board[i][2] === player) win = true;
-                if (board[0][i] === player && board[1][i] === player && board[2][i] === player) win = true;
+                if (board[i][0] === player && board[i][1] === player && board[i][2] === player) return true;
+                if (board[0][i] === player && board[1][i] === player && board[2][i] === player) return true;
             }
-            if (board[0][0] === player && board[1][1] === player && board[2][2] === player) win = true;
-            if (board[0][2] === player && board[1][1] === player && board[2][0] === player) win = true;
-            return win;
+            if (board[0][0] === player && board[1][1] === player && board[2][2] === player) return true;
+            if (board[0][2] === player && board[1][1] === player && board[2][0] === player) return true;
+            return false;
         }
 
         function isBoardFull() {
-            for (var y = 0; y < 3; y++)
-                for (var x = 0; x < 3; x++)
+            for (var y = 0; y < 3; y++) {
+                for (var x = 0; x < 3; x++) {
                     if (board[y][x] === '') return false;
+                }
+            }
             return true;
         }
 
         render();
 
-        // обработка Enter/пробела на выделенной клетке
+        // Enter / пробел на сфокусированной клетке
         container.addEventListener('keydown', function (e) {
             if (e.keyCode === 13 || e.keyCode === 32) {
                 var focused = document.activeElement;
@@ -264,27 +266,31 @@
         });
     }
 
-    // ========== 3. 2048 ==========
+    // ======================== 2048 ========================
     function Game2048(container, onExit) {
         var size = 4;
         var grid = [];
         var score = 0;
         var gameOverFlag = false;
 
-        function init() {
-            grid = Array.from({ length: size }, () => Array(size).fill(0));
-            score = 0;
-            gameOverFlag = false;
-            addRandom();
-            addRandom();
-            render();
+        function initGrid() {
+            grid = [];
+            for (var r = 0; r < size; r++) {
+                var row = [];
+                for (var c = 0; c < size; c++) {
+                    row.push(0);
+                }
+                grid.push(row);
+            }
         }
 
         function addRandom() {
             var empty = [];
-            for (var r = 0; r < size; r++)
-                for (var c = 0; c < size; c++)
-                    if (grid[r][c] === 0) empty.push({ r, c });
+            for (var r = 0; r < size; r++) {
+                for (var c = 0; c < size; c++) {
+                    if (grid[r][c] === 0) empty.push({ r: r, c: c });
+                }
+            }
             if (empty.length > 0) {
                 var pos = empty[Math.floor(Math.random() * empty.length)];
                 grid[pos.r][pos.c] = Math.random() < 0.9 ? 2 : 4;
@@ -294,9 +300,16 @@
         function move(direction) {
             if (gameOverFlag) return;
             var moved = false;
-            var newGrid = grid.map(row => [...row]);
+            var newGrid = [];
+            for (var r = 0; r < size; r++) {
+                newGrid.push(grid[r].slice()); // копия строки
+            }
+
             function slide(row) {
-                var arr = row.filter(v => v !== 0);
+                var arr = [];
+                for (var i = 0; i < row.length; i++) {
+                    if (row[i] !== 0) arr.push(row[i]);
+                }
                 for (var i = 0; i < arr.length - 1; i++) {
                     if (arr[i] === arr[i + 1]) {
                         arr[i] *= 2;
@@ -323,16 +336,20 @@
                 }
             } else if (direction === 'up') {
                 for (var c = 0; c < size; c++) {
-                    var col = [newGrid[0][c], newGrid[1][c], newGrid[2][c], newGrid[3][c]];
+                    var col = [];
+                    for (var r = 0; r < size; r++) col.push(newGrid[r][c]);
                     var slided = slide(col);
                     for (var r = 0; r < size; r++) newGrid[r][c] = slided[r];
                 }
-                moved = true; // упрощённо считаем, что было движение
+                moved = true;
             } else if (direction === 'down') {
                 for (var c = 0; c < size; c++) {
-                    var col = [newGrid[0][c], newGrid[1][c], newGrid[2][c], newGrid[3][c]].reverse();
+                    var col = [];
+                    for (var r = 0; r < size; r++) col.push(newGrid[r][c]);
+                    col.reverse();
                     var slided = slide(col);
-                    for (var r = 0; r < size; r++) newGrid[r][c] = slided.reverse()[r];
+                    var slidedReversed = slided.reverse();
+                    for (var r = 0; r < size; r++) newGrid[r][c] = slidedReversed[r];
                 }
                 moved = true;
             }
@@ -346,15 +363,21 @@
         }
 
         function isGameOver() {
-            for (var r = 0; r < size; r++)
-                for (var c = 0; c < size; c++)
+            for (var r = 0; r < size; r++) {
+                for (var c = 0; c < size; c++) {
                     if (grid[r][c] === 0) return false;
-            for (var r = 0; r < size; r++)
-                for (var c = 0; c < size - 1; c++)
+                }
+            }
+            for (var r = 0; r < size; r++) {
+                for (var c = 0; c < size - 1; c++) {
                     if (grid[r][c] === grid[r][c + 1]) return false;
-            for (var c = 0; c < size; c++)
-                for (var r = 0; r < size - 1; r++)
+                }
+            }
+            for (var c = 0; c < size; c++) {
+                for (var r = 0; r < size - 1; r++) {
                     if (grid[r][c] === grid[r + 1][c]) return false;
+                }
+            }
             return true;
         }
 
@@ -377,16 +400,22 @@
             container.querySelector('.game2048-back').addEventListener('click', onExit);
         }
 
+        function init() {
+            initGrid();
+            score = 0;
+            gameOverFlag = false;
+            addRandom();
+            addRandom();
+            render();
+        }
+
         init();
 
-        // управление
         var canvasLike = container.querySelector('.game2048-grid');
         if (canvasLike) {
-            addDirectionControl(canvasLike, function (dir) {
-                move(dir);
-            });
+            addDirectionControl(canvasLike, function (dir) { move(dir); });
         }
-        // также кнопки на клавиатуре (пульт)
+
         window.addEventListener('keydown', function key2048(e) {
             if (e.keyCode >= 37 && e.keyCode <= 40) {
                 e.preventDefault();
@@ -396,12 +425,12 @@
         });
     }
 
-    // ========== 4. Тетрис ==========
+    // ======================== ТЕТРИС ========================
     function TetrisGame(canvas, onExit) {
         var ctx = canvas.getContext('2d');
         var blockSize = 30;
         var cols = 10, rows = 20;
-        var board = Array.from({ length: rows }, () => Array(cols).fill(0));
+        var board = [];
         var piece, pieceX, pieceY;
         var score = 0;
         var gameInterval;
@@ -416,9 +445,24 @@
             [[1,1,0],[0,1,1]]  // Z
         ];
 
+        function initBoard() {
+            board = [];
+            for (var r = 0; r < rows; r++) {
+                var row = [];
+                for (var c = 0; c < cols; c++) row.push(0);
+                board.push(row);
+            }
+        }
+
         function randomPiece() {
             var idx = Math.floor(Math.random() * pieces.length);
-            return JSON.parse(JSON.stringify(pieces[idx]));
+            // глубокая копия
+            var p = pieces[idx];
+            var copy = [];
+            for (var y = 0; y < p.length; y++) {
+                copy.push(p[y].slice());
+            }
+            return copy;
         }
 
         function draw() {
@@ -479,11 +523,17 @@
 
         function clearLines() {
             for (var r = rows - 1; r >= 0; r--) {
-                if (board[r].every(v => v === 1)) {
+                var full = true;
+                for (var c = 0; c < cols; c++) {
+                    if (board[r][c] !== 1) { full = false; break; }
+                }
+                if (full) {
                     board.splice(r, 1);
-                    board.unshift(Array(cols).fill(0));
+                    var newRow = [];
+                    for (var c = 0; c < cols; c++) newRow.push(0);
+                    board.unshift(newRow);
                     score += 100;
-                    r++;
+                    r++; // повторно проверить эту строку (бывшую следующую)
                 }
             }
         }
@@ -508,7 +558,9 @@
         }
 
         function rotate() {
-            var rotated = piece[0].map((_, i) => piece.map(row => row[i]).reverse());
+            var rotated = piece[0].map(function (val, i) {
+                return piece.map(function (row) { return row[i]; }).reverse();
+            });
             if (!collide(pieceX, pieceY, rotated)) piece = rotated;
             draw();
         }
@@ -521,23 +573,32 @@
             setTimeout(onExit, 2000);
         }
 
-        piece = randomPiece();
-        pieceX = Math.floor(cols / 2) - 1;
-        pieceY = 0;
-        gameInterval = setInterval(moveDown, 500);
-        draw();
+        function start() {
+            initBoard();
+            score = 0;
+            piece = randomPiece();
+            pieceX = Math.floor(cols / 2) - 1;
+            pieceY = 0;
+            draw();
+            gameInterval = setInterval(moveDown, 500);
+        }
 
-        // клавиатура (пульт)
+        start();
+
         window.addEventListener('keydown', function tetrisKey(e) {
             if (e.keyCode === 37) { e.preventDefault(); moveLeft(); }
             else if (e.keyCode === 39) { e.preventDefault(); moveRight(); }
             else if (e.keyCode === 40) { e.preventDefault(); moveDown(); }
             else if (e.keyCode === 38) { e.preventDefault(); rotate(); }
-            else if (e.keyCode === 13 || e.keyCode === 32) { e.preventDefault(); while(!collide(pieceX, pieceY+1, piece)) pieceY++; lock(); draw(); }
+            else if (e.keyCode === 13 || e.keyCode === 32) {
+                e.preventDefault();
+                while (!collide(pieceX, pieceY+1, piece)) pieceY++;
+                lock();
+                draw();
+            }
         });
 
-        // мышь/тач: кнопки
-        canvas.addEventListener('click', function(e) {
+        canvas.addEventListener('click', function (e) {
             var rect = canvas.getBoundingClientRect();
             var x = e.clientX - rect.left;
             var y = e.clientY - rect.top;
@@ -548,7 +609,7 @@
         });
     }
 
-    // ========== 5. Пятнашки ==========
+    // ======================== ПЯТНАШКИ ========================
     function PuzzleGame(container, onExit) {
         var size = 4;
         var tiles = [];
@@ -570,7 +631,6 @@
                 tiles[i] = tiles[j];
                 tiles[j] = temp;
             }
-            // найти пустую
             for (var i = 0; i < tiles.length; i++) {
                 if (tiles[i] === 0) {
                     empty.x = i % size;
@@ -614,7 +674,7 @@
                 for (var x = 0; x < size; x++) {
                     var idx = y * size + x;
                     var val = tiles[idx];
-                    html += '<div class="puzzle-cell' + (val === 0 ? ' empty' : '') + '" data-x="' + x + '" data-y="' + y + '">' + (val || '') + '</div>';
+                    html += '<div class="puzzle-cell' + (val === 0 ? ' empty' : '') + '" data-x="' + x + '" data-y="' + y + '" tabindex="0">' + (val || '') + '</div>';
                 }
                 html += '</div>';
             }
@@ -622,26 +682,28 @@
             html += '<button class="puzzle-back">← Назад</button>';
             container.innerHTML = html;
 
-            container.querySelectorAll('.puzzle-cell').forEach(cell => {
-                cell.addEventListener('click', function () {
-                    var x = parseInt(this.dataset.x);
-                    var y = parseInt(this.dataset.y);
+            var cells = container.querySelectorAll('.puzzle-cell');
+            for (var i = 0; i < cells.length; i++) {
+                cells[i].addEventListener('click', function () {
+                    var x = parseInt(this.getAttribute('data-x'));
+                    var y = parseInt(this.getAttribute('data-y'));
                     move(x, y);
                 });
-            });
+            }
             container.querySelector('.puzzle-back').addEventListener('click', onExit);
 
-            // пульт: выделение первой клетки для навигации
+            // Фокус на первую непустую для пульта
             var first = container.querySelector('.puzzle-cell:not(.empty)');
             if (first) first.focus();
         }
 
-        // клавиатура: стрелки + Enter на выделенной клетке
         container.addEventListener('keydown', function (e) {
             if (e.keyCode === 13 || e.keyCode === 32) {
                 var focused = document.activeElement;
                 if (focused && focused.classList.contains('puzzle-cell')) {
-                    move(parseInt(focused.dataset.x), parseInt(focused.dataset.y));
+                    var x = parseInt(focused.getAttribute('data-x'));
+                    var y = parseInt(focused.getAttribute('data-y'));
+                    move(x, y);
                 }
             }
         });
@@ -649,7 +711,7 @@
         init();
     }
 
-    // ========== Регистрация плагина ==========
+    // ================== РЕГИСТРАЦИЯ В LAMPA ==================
     Lampa.Plugin.add('games', function () {
 
         // Компонент списка игр
@@ -663,9 +725,9 @@
                     { id: 'tetris', name: 'Тетрис', icon: '🧱' },
                     { id: 'puzzle', name: 'Пятнашки', icon: '🧩' }
                 ];
-                games.forEach(function (game) {
-                    html += '<div class="game-item" data-game="' + game.id + '" tabindex="0">' + game.icon + ' ' + game.name + '</div>';
-                });
+                for (var i = 0; i < games.length; i++) {
+                    html += '<div class="game-item" data-game="' + games[i].id + '" tabindex="0">' + games[i].icon + ' ' + games[i].name + '</div>';
+                }
                 html += '</div>';
                 this.render(html);
 
@@ -677,7 +739,7 @@
             }
         });
 
-        // Компонент для каждой игры (общий подход с передачей конструктора)
+        // Фабрика компонентов игр
         function createGameComponent(gameId, GameConstructor, useCanvas) {
             Lampa.Component.add('game_' + gameId, {
                 start: function () {
@@ -695,13 +757,21 @@
                         Lampa.Activity.back();
                     };
 
-                    if (useCanvas) {
-                        var canvas = document.getElementById(gameId + 'Canvas');
-                        this._game = new GameConstructor(canvas, exit);
-                    } else {
-                        var container = document.getElementById(gameId + 'Container');
-                        new GameConstructor(container, exit);
-                    }
+                    var self = this;
+                    // Небольшая задержка, чтобы DOM отрисовался
+                    setTimeout(function () {
+                        if (useCanvas) {
+                            var canvas = document.getElementById(gameId + 'Canvas');
+                            if (canvas) {
+                                self._game = new GameConstructor(canvas, exit);
+                            }
+                        } else {
+                            var container = document.getElementById(gameId + 'Container');
+                            if (container) {
+                                new GameConstructor(container, exit);
+                            }
+                        }
+                    }, 10);
                 },
                 destroy: function () {
                     if (this._game && this._game.stop) this._game.stop();
@@ -716,7 +786,7 @@
         createGameComponent('tetris', TetrisGame, true);
         createGameComponent('puzzle', PuzzleGame, false);
 
-        // Добавление пункта в боковое меню
+        // Добавляем пункт в боковое меню
         Lampa.Menu.add('Игры', '<svg viewBox="0 0 24 24" width="24" height="24" fill="white"><path d="M17.5 7a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm-11 0a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm5.5 2.5c.28 0 .5.22.5.5v5c0 .28-.22.5-.5.5s-.5-.22-.5-.5v-5c0-.28.22-.5.5-.5zm-2.5 6.5v2c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-2h-5z"/></svg>', function () {
             Lampa.Activity.push({ url: '', component: 'games_list' });
         });
