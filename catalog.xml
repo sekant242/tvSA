@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<page>
+  <title>📺 Media Server X - Проекты и Плейлисты</title>
+  <content>
+    <section>
+      <title>IPTV Плейлисты</title>
+      <items>
+        <item>
+          <title>🌍 IPTV Organization - Полная коллекция</title>
+          <description>Крупнейшая коллекция IPTV плейлистов со всего мира</description>
+          <link>https://raw.githubusercontent.com/iptv-org/iptv/master/streams/index.m3u</link>
+          <image>https://via.placeholder.com/320x180?text=IPTV</image>
+        </item>
+        
+        <item>
+          <title>🇷🇺 Русские каналы</title>
+          <description>Русские ТВ каналы: ТНТ, СТС, Звезда, Россия 1</description>
+          <link>https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ru.m3u</link>
+          <image>https://via.placeholder.com/320x180?text=Russian+TV</image>
+        </item>
+        
+        <item>
+          <title>⚽ Спортивные каналы</title>
+          <description>Спортивные трансляции: футбол, хоккей, баскетбол</description>
+          <link>https://raw.githubusercontent.com/iptv-org/iptv/master/streams/sport.m3u</link>
+          <image>https://via.placeholder.com/320x180?text=Sports</image>
+        </item>
+        
+        <item>
+          <title>🎬 Кинотеатры</title>
+          <description>Каналы фильмов и кинокомпании</description>
+          <link>https://raw.githubusercontent.com/iptv-org/iptv/master/streams/movies.m3u</link>
+          <image>https://via.placeholder.com/320x180?text=Movies</image>
+        </item>
+        
+        <item>
+          <title>🎵 Музыкальные каналы</title>
+          <description>Музыка всех жанров: рок, поп, классика</description>
+          <link>https://raw.githubusercontent.com/iptv-org/iptv/master/streams/music.m3u</link>
+          <image>https://via.placeholder.com/320x180?text=Music</image>
+        </item>
+        
+        <item>
+          <title>👧 Детские каналы</title>
+          <description>Детские передачи и образовательные программы</description>
+          <link>https://raw.githubusercontent.com/iptv-org/iptv/master/streams/kids.m3u</link>
+          <image>https://via.placeholder.com/320x180?text=Kids</image>
+        </item>
+        
+        <item>
+          <title>📰 Новостные каналы</title>
+          <description>BBC, CNN, Euronews и другие новостные каналы</description>
+          <link>https://raw.githubusercontent.com/iptv-org/iptv/master/streams/news.m3u</link>
+          <image>https://via.placeholder.com/320x180?text=News</image>
+        </item>
+      </items>
+    </section>
+
+    <section>
+      <title>Медиа-серверы</title>
+      <items>
+        <item>
+          <title>🎯 SRS (Simple Realtime Server)</title>
+          <description>Высокоэффективный сервер потоковой передачи. Поддержка RTMP, WebRTC, HLS, SRT, MPEG-DASH</description>
+          <link>https://github.com/ossrs/srs</link>
+          <image>https://via.placeholder.com/320x180?text=SRS</image>
+        </item>
+        
+        <item>
+          <title>⚡ ZLMediaKit</title>
+          <description>Мощный сервер потоковой передачи с RTSP, RTMP, HLS, WebRTC поддержкой</description>
+          <link>https://github.com/ZLMediaKit/ZLMediaKit</link>
+          <image>https://via.placeholder.com/320x180?text=ZLMediaKit</image>
+        </item>
+        
+        <item>
+          <title>🔄 MediaMTX</title>
+          <description>Готовый медиа-сервер без зависимостей. SRT, RTSP, RTMP, WebRTC</description>
+          <link>https://github.com/bluenviron/mediamtx</link>
+          <image>https://via.placeholder.com/320x180?text=MediaMTX</image>
+        </item>
+        
+        <item>
+          <title>🧩 Monibuca</title>
+          <description>Модульный фреймворк для создания серверов потоковой передачи на Go</description>
+          <link>https://github.com/langhuihui/monibuca</link>
+          <image>https://via.placeholder.com/320x180?text=Monibuca</image>
+        </item>
+        
+        <item>
+          <title>🏠 Jellyfin</title>
+          <description>Бесплатная система управления медиа с открытым исходным кодом</description>
+          <link>https://github.com/jellyfin/jellyfin</link>
+          <image>https://via.placeholder.com/320x180?text=Jellyfin</image>
+        </item>
+        
+        <item>
+          <title>📡 Gerbera</title>
+          <description>UPnP медиа-сервер для потоковой передачи через домашнюю сеть</description>
+          <link>https://github.com/gerbera/gerbera</link>
+          <image>https://via.placeholder.com/320x180?text=Gerbera</image>
+        </item>
+        
+        <item>
+          <title>🎵 Navidrome</title>
+          <description>Легкий музыкальный сервер. Совместимость с API Subsonic</description>
+          <link>https://github.com/navidrome/navidrome</link>
+          <image>https://via.placeholder.com/320x180?text=Navidrome</image>
+        </item>
+        
+        <item>
+          <title>🎮 AKStream</title>
+          <description>Платформа управления потоками RTSP, RTMP, HTTP с мониторингом</description>
+          <link>https://github.com/chatop2020/AKStream</link>
+          <image>https://via.placeholder.com/320x180?text=AKStream</image>
+        </item>
+        
+        <item>
+          <title>🚀 LiveKit</title>
+          <description>Полнофункциональный стек для видео, голоса и данных в реальном времени</description>
+          <link>https://github.com/livekit/livekit</link>
+          <image>https://via.placeholder.com/320x180?text=LiveKit</image>
+        </item>
+        
+        <item>
+          <title>🎬 Oblecto</title>
+          <description>Потоковая передача вашего медиа-контента для домашнего сервера</description>
+          <link>https://github.com/Oblecto/Oblecto</link>
+          <image>https://via.placeholder.com/320x180?text=Oblecto</image>
+        </item>
+      </items>
+    </section>
+
+    <section>
+      <title>Полезные ссылки</title>
+      <items>
+        <item>
+          <title>🔗 GitHub - Media Server</title>
+          <description>Полный список медиа-серверов на GitHub</description>
+          <link>https://github.com/topics/media-server</link>
+          <image>https://via.placeholder.com/320x180?text=GitHub</image>
+        </item>
+        
+        <item>
+          <title>📡 GitHub - Streaming</title>
+          <description>Проекты для потоковой передачи медиа</description>
+          <link>https://github.com/topics/streaming</link>
+          <image>https://via.placeholder.com/320x180?text=Streaming</image>
+        </item>
+        
+        <item>
+          <title>📺 GitHub - IPTV</title>
+          <description>Проекты и плейлисты IPTV</description>
+          <link>https://github.com/topics/iptv</link>
+          <image>https://via.placeholder.com/320x180?text=IPTV</image>
+        </item>
+        
+        <item>
+          <title>📋 GitHub - M3U Playlist</title>
+          <description>Плейлисты в формате M3U</description>
+          <link>https://github.com/topics/m3u-playlist</link>
+          <image>https://via.placeholder.com/320x180?text=M3U</image>
+        </item>
+      </items>
+    </section>
+  </content>
+</page>
