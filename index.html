@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Server X - Каталог контента</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: rgba(255, 255, 255, 0.98);
+            padding: 40px 20px;
+            border-radius: 15px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            text-align: center;
+        }
+        
+        header h1 {
+            color: #667eea;
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #667eea;
+            color: #667eea;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .tab-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .tab-btn.active {
+            background: #667eea;
+            color: white;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 25px;
+            font-size: 1.8em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .content-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        
+        .content-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .content-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+        }
+        
+        .content-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        }
+        
+        .content-card:hover::before {
+            transform: translateX(0);
+        }
+        
+        .content-card-content {
+            position: relative;
+            z-index: 1;
+        }
+        
+        .content-card h3 {
+            margin-bottom: 12px;
+            font-size: 1.3em;
+            word-break: break-word;
+        }
+        
+        .content-card .icon {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .content-card p {
+            flex-grow: 1;
+            margin-bottom: 15px;
+            font-size: 0.95em;
+            opacity: 0.95;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .btn {
+            flex: 1;
+            padding: 12px 15px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 0.9em;
+        }
+        
+        .btn-open {
+            background: white;
+            color: #667eea;
+        }
+        
+        .btn-open:hover {
+            background: #f0f0f0;
+            transform: scale(1.05);
+        }
+        
+        .btn-copy {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid white;
+        }
+        
+        .btn-copy:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .search-box {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 15px 20px;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: all 0.3s ease;
+        }
+        
+        .search-box input:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .empty-state p {
+            font-size: 1.1em;
+        }
+        
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            color: #333;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .badge {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            margin-bottom: 10px;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: white;
+            margin-top: 40px;
+        }
+        
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2em;
+            }
+            
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .tabs {
+                flex-direction: column;
+            }
+            
+            .tab-btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📺 Media Server X</h1>
+            <p>Каталог контента - откройте в вашем приложении</p>
+        </header>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('playlists')">🎬 Плейлисты</button>
+            <button class="tab-btn" onclick="switchTab('projects')">🔗 Проекты</button>
+            <button class="tab-btn" onclick="switchTab('channels')">📡 Каналы</button>
+        </div>
+        
+        <!-- ПЛЕЙЛИСТЫ -->
+        <div id="playlists" class="tab-content active">
+            <div class="search-box">
+                <input type="text" id="playlistSearch" placeholder="🔍 Поиск плейлистов..." onkeyup="filterContent('playlist')">
+            </div>
+            
+            <div class="section">
+                <h2>📺 IPTV Плейлисты</h2>
+                <div class="content-grid" id="playlistGrid">
+                    <!-- Плейлисты будут добавлены через JavaScript -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- ПРОЕКТЫ -->
+        <div id="projects" class="tab-content">
+            <div class="search-box">
+                <input type="text" id="projectSearch" placeholder="🔍 Поиск проектов..." onkeyup="filterContent('project')">
+            </div>
+            
+            <div class="section">
+                <h2>🔗 Медиа-серверы и проекты</h2>
+                <div class="content-grid" id="projectGrid">
+                    <!-- Проекты будут добавлены через JavaScript -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- КАНАЛЫ -->
+        <div id="channels" class="tab-content">
+            <div class="search-box">
+                <input type="text" id="channelSearch" placeholder="🔍 Поиск каналов..." onkeyup="filterContent('channel')">
+            </div>
+            
+            <div class="section">
+                <h2>📡 Популярные каналы</h2>
+                <div class="content-grid" id="channelGrid">
+                    <!-- Каналы будут добавлены через JavaScript -->
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>© 2026 Media Server X Catalog | Откройте контент в вашем приложении</p>
+        </footer>
+    </div>
+    
+    <script>
+        const contentData = {
+            playlists: [
+                {
+                    id: 'iptv-org',
+                    name: 'IPTV Organization',
+                    description: 'Крупнейшая коллекция IPTV плейлистов',
+                    url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/index.m3u',
+                    icon: '🌍'
+                },
+                {
+                    id: 'live-tv',
+                    name: 'Live TV Streams',
+                    description: 'Потоки живого ТВ из разных источников',
+                    url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/index.nsfw.m3u',
+                    icon: '📻'
+                },
+                {
+                    id: 'russian-tv',
+                    name: 'Russian Channels',
+                    description: 'Русские ТВ каналы',
+                    url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ru.m3u',
+                    icon: '🇷🇺'
+                },
+                {
+                    id: 'sports',
+                    name: 'Sports Channels',
+                    description: 'Спортивные каналы и события',
+                    url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/sport.m3u',
+                    icon: '⚽'
+                },
+                {
+                    id: 'movies',
+                    name: 'Movie Channels',
+                    description: 'Кинотеатры и каналы фильмов',
+                    url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/movies.m3u',
+                    icon: '🎬'
+                },
+                {
+                    id: 'music',
+                    name: 'Music Channels',
+                    description: 'Музыкальные каналы и радио',
+                    url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/music.m3u',
+                    icon: '🎵'
+                }
+            ],
+            projects: [
+                {
+                    id: 'srs',
+                    name: 'SRS (Simple Realtime Server)',
+                    description: 'Высокоэффективный сервер потоковой передачи',
+                    url: 'https://github.com/ossrs/srs',
+                    icon: '🎯'
+                },
+                {
+                    id: 'zlmediakit',
+                    name: 'ZLMediaKit',
+                    description: 'Мощный сервер потоковой передачи',
+                    url: 'https://github.com/ZLMediaKit/ZLMediaKit',
+                    icon: '⚡'
+                },
+                {
+                    id: 'mediamtx',
+                    name: 'MediaMTX',
+                    description: 'Готовый медиа-сервер без зависимостей',
+                    url: 'https://github.com/bluenviron/mediamtx',
+                    icon: '🔄'
+                },
+                {
+                    id: 'jellyfin',
+                    name: 'Jellyfin',
+                    description: 'Бесплатная система управления медиа',
+                    url: 'https://github.com/jellyfin/jellyfin',
+                    icon: '🏠'
+                },
+                {
+                    id: 'plex',
+                    name: 'Plex Media Server',
+                    description: 'Популярный домашний медиа-сервер',
+                    url: 'https://www.plex.tv',
+                    icon: '📺'
+                },
+                {
+                    id: 'kodi',
+                    name: 'Kodi',
+                    description: 'Медиа-центр с открытым исходным кодом',
+                    url: 'https://kodi.tv',
+                    icon: '🎮'
+                }
+            ],
+            channels: [
+                {
+                    id: 'ch-1',
+                    name: 'HD Movies',
+                    description: 'HD Фильмы',
+                    url: 'https://example.com/hdmovies.m3u8',
+                    icon: '🎬'
+                },
+                {
+                    id: 'ch-2',
+                    name: 'Sports Live',
+                    description: 'Спортивные трансляции',
+                    url: 'https://example.com/sports.m3u8',
+                    icon: '⚽'
+                },
+                {
+                    id: 'ch-3',
+                    name: 'Music Box',
+                    description: 'Музыкальный канал',
+                    url: 'https://example.com/music.m3u8',
+                    icon: '🎵'
+                },
+                {
+                    id: 'ch-4',
+                    name: 'Documentary',
+                    description: 'Документальные фильмы',
+                    url: 'https://example.com/documentary.m3u8',
+                    icon: '🎥'
+                },
+                {
+                    id: 'ch-5',
+                    name: 'Kids Channel',
+                    description: 'Детские передачи',
+                    url: 'https://example.com/kids.m3u8',
+                    icon: '👧'
+                },
+                {
+                    id: 'ch-6',
+                    name: 'News 24/7',
+                    description: 'Новости круглосуточно',
+                    url: 'https://example.com/news.m3u8',
+                    icon: '📰'
+                }
+            ]
+        };
+        
+        function renderContent() {
+            renderCategory('playlist', contentData.playlists, 'playlistGrid');
+            renderCategory('project', contentData.projects, 'projectGrid');
+            renderCategory('channel', contentData.channels, 'channelGrid');
+        }
+        
+        function renderCategory(type, items, gridId) {
+            const grid = document.getElementById(gridId);
+            grid.innerHTML = items.map(item => `
+                <div class="content-card" data-type="${type}" data-name="${item.name.toLowerCase()}" data-id="${item.id}">
+                    <div class="content-card-content">
+                        <div class="icon">${item.icon}</div>
+                        <h3>${item.name}</h3>
+                        <p>${item.description}</p>
+                        <div class="button-group">
+                            <button class="btn btn-open" onclick="openInApp('${item.url}', '${item.name}')">
+                                ▶ Открыть
+                            </button>
+                            <button class="btn btn-copy" onclick="copyToClipboard('${item.url}')">
+                                📋 Копировать
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function openInApp(url, name) {
+            // Протоколы для различных приложений
+            const protocols = [
+                `vlc://${url}`,
+                `potplayer://${url}`,
+                `mpc-hc://${url}`,
+                url // Ссылка по умолчанию
+            ];
+            
+            // Пытаемся открыть в приложении
+            window.location.href = protocols[0];
+            
+            // Если не сработало, открываем в браузере через timeout
+            setTimeout(() => {
+                window.open(url, '_blank');
+            }, 1000);
+            
+            showToast(`✓ Открыт: ${name}`);
+        }
+        
+        function copyToClipboard(url) {
+            navigator.clipboard.writeText(url).then(() => {
+                showToast('✓ Ссылка скопирована в буфер обмена');
+            }).catch(() => {
+                showToast('✗ Ошибка при копировании');
+            });
+        }
+        
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+        
+        function switchTab(tabName) {
+            // Скрыть все вкладки
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Деактивировать все кнопки
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Показать выбранную вкладку
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        function filterContent(type) {
+            const searchInput = document.getElementById(type + 'Search');
+            const searchTerm = searchInput.value.toLowerCase();
+            
+            let gridId, typePrefix;
+            if (type === 'playlist') {
+                gridId = 'playlistGrid';
+                typePrefix = 'playlist';
+            } else if (type === 'project') {
+                gridId = 'projectGrid';
+                typePrefix = 'project';
+            } else if (type === 'channel') {
+                gridId = 'channelGrid';
+                typePrefix = 'channel';
+            }
+            
+            document.querySelectorAll(`#${gridId} .content-card`).forEach(card => {
+                const name = card.getAttribute('data-name');
+                if (name.includes(searchTerm)) {
+                    card.style.display = '';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+        
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', renderContent);
+    </script>
+</body>
+</html>
