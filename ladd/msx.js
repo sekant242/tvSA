@@ -1,72 +1,61 @@
 (function() {
-    // Адрес вашего приложения Media Station X
-    var msxUrl = 'https://sekant242.github.io/tvSA/ladd/';
+  "use strict";
 
-    // Функция открытия MSX на весь экран
-    function openMsxFullscreen() {
-        // Способ 1: пытаемся использовать встроенный Iframe с fullscreen
-        if (Lampa.Iframe && Lampa.Iframe.show) {
-            Lampa.Iframe.show({
-                url: msxUrl,
-                title: 'Media Station X',
-                fullscreen: true,   // ключевой параметр
-                params: {
-                    autostart: true
-                }
-            });
-        } 
-        // Способ 2: если fullscreen не работает, принудительно растягиваем через CSS
-        else {
-            Lampa.Modal.open({
-                title: 'Media Station X',
-                content: '<iframe src="' + msxUrl + '" style="width:100%; height:100%; border:none; position:absolute; top:0; left:0;" allowfullscreen></iframe>',
-                size: 'fullscreen'
-            });
-        }
+  // Singleton защита от повторной загрузки плагина[reference:6]
+  if (window.msx_plugin_loaded) return;
+  window.msx_plugin_loaded = true;
 
-        // Дополнительная защита: через 100мс применяем стили на все модальные окна
-        setTimeout(function() {
-            $('.lampa-modal, .lampa-modal-content, .modal-content, .iframe-modal').css({
-                'position': 'fixed',
-                'top': 0,
-                'left': 0,
-                'width': '100%',
-                'height': '100%',
-                'margin': 0,
-                'padding': 0,
-                'background': '#000',
-                'z-index': 9999
-            });
-            $('iframe').css({
-                'width': '100%',
-                'height': '100%',
-                'border': 'none'
-            });
-        }, 100);
-    }
+  // Основная функция инициализации плагина[reference:7]
+  function start() {
+    if (window.msx_plugin_initialized) return;
+    window.msx_plugin_initialized = true;
 
-    // Добавляем пункт в главное меню Lampa
-    Lampa.Activity.add({
-        url: 'msx',
-        title: 'Media Station X',
-        icon: 'mdi:television-classic',
-        component: 'iframe',
-        params: {
-            url: msxUrl
-        },
-        onBuild: function(activity) {
-            // При открытии активности вызываем нашу функцию
-            openMsxFullscreen();
-        }
+    // Добавляем пункт в главное меню
+    Lampa.Menu.add({
+      title: "MSX",
+      icon: "<svg>...</svg>", // SVG иконка (замените на свою)
+      component: "msx",
+      onRender: function() {
+        // Получаем URL для запуска MSX из настроек[reference:8]
+        var msxUrl = Lampa.Storage.get('msxUrl', 'https://lampa-movie.github.io/lampa');
+        
+        // Запускаем стартовое окно MSX с помощью iframe[reference:9]
+        Lampa.Activity.push({
+          url: msxUrl,
+          component: "iframe",
+          title: "Media Station X"
+        });
+      }
     });
 
-    // Альтернативно – можно добавить в раздел "Приложения" (если есть)
-    if (Lampa.Menu && Lampa.Menu.add) {
-        Lampa.Menu.add({
-            title: 'Media Station X',
-            icon: 'mdi:television',
-            url: 'msx',
-            activity: 'msx'
-        });
+    // Создаем страницу настроек для плагина[reference:10]
+    if (Lampa.Settings && Lampa.Settings.add) {
+      Lampa.Settings.add({
+        title: "MSX настройки",
+        items: [
+          {
+            type: "input",
+            name: "msxUrl",
+            title: "MSX URL стартовый параметр",
+            placeholder: "https://example.com/start.json",
+            value: Lampa.Storage.get('msxUrl', 'https://lampa-movie.github.io/lampa'),
+            onChange: function(value) {
+              Lampa.Storage.set('msxUrl', value);
+            }
+          }
+        ]
+      });
     }
+
+    console.log("MSX плагин инициализирован");
+  }
+
+  // Запуск плагина с проверкой готовности Lampa[reference:11]
+  if (window.appready) {
+    start();
+  } else {
+    Lampa.Listener.follow("app", function(e) {
+      if (e.type === "ready") start();
+    });
+  }
 })();
