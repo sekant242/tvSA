@@ -5,16 +5,15 @@
   let logBuffer = []; 
 
   // Состояния интерфейса
-  let filterType = 'all';     // 'all', 'log', 'error', 'warn', 'info', 'debug'
-  let hideMeta = false;       // скрыть время и тип
-  let searchQuery = '';       // строка поиска
-  let ignoreCase = true;      // игнорировать регистр при поиске
-  let paused = false;         // пауза обновления окна
-  let autoScroll = true;      // автоматическая прокрутка вниз
-  let fontSize = 13;          // размер шрифта в пикселях
-  let theme = 'dark';         // 'dark' или 'light'
+  let filterType = 'all';
+  let hideMeta = false;
+  let searchQuery = '';
+  let ignoreCase = true;
+  let paused = false;
+  let autoScroll = true;
+  let fontSize = 13;
+  let theme = 'dark';
 
-  // DOM-элементы, к которым нужен доступ
   let textarea = null;
   let statsSpan = null;
   let fontSpan = null;
@@ -33,14 +32,12 @@
     logBuffer.push({ time, type, text }); 
     if (logBuffer.length > MAX_LOGS) logBuffer.shift(); 
     
-    // Обновляем статистику и, если не на паузе, перерисовываем окно
     updateStats();
     if (!paused && window._devLogTextArea) { 
       updateTextArea(window._devLogTextArea); 
     } 
   } 
 
-  // Фильтрация логов по типу, поиску и hideMeta (но hideMeta влияет только на отображение строки)
   function getFilteredLogs() {
     let filtered = filterType === 'all' 
       ? logBuffer.slice() 
@@ -58,21 +55,13 @@
 
   function updateTextArea(textareaEl) { 
     if (!textareaEl) return; 
-    
     const filtered = getFilteredLogs();
-    
     const text = filtered.map(entry => {
-      if (hideMeta) {
-        return entry.text;
-      } else {
-        return `[${entry.time}] [${entry.type.toUpperCase()}] ${entry.text}`;
-      }
+      if (hideMeta) return entry.text;
+      return `[${entry.time}] [${entry.type.toUpperCase()}] ${entry.text}`;
     }).join('\n');
-    
     textareaEl.value = text; 
-    if (autoScroll) {
-      textareaEl.scrollTop = textareaEl.scrollHeight; 
-    }
+    if (autoScroll) textareaEl.scrollTop = textareaEl.scrollHeight; 
   } 
 
   function updateStats() {
@@ -100,17 +89,11 @@
     if (theme === 'light') {
       container.style.background = '#f0f0f0';
       container.style.color = '#000';
-      if (textarea) {
-        textarea.style.background = '#fff';
-        textarea.style.color = '#000';
-      }
+      if (textarea) { textarea.style.background = '#fff'; textarea.style.color = '#000'; }
     } else {
       container.style.background = '#1a1a1a';
       container.style.color = '#fff';
-      if (textarea) {
-        textarea.style.background = '#000';
-        textarea.style.color = '#0f0';
-      }
+      if (textarea) { textarea.style.background = '#000'; textarea.style.color = '#0f0'; }
     }
   }
 
@@ -136,16 +119,12 @@
   }
 
   function copyRawLogs() {
-    const rawText = logBuffer.map(entry => {
-      return `[${entry.time}] [${entry.type.toUpperCase()}] ${entry.text}`;
-    }).join('\n');
+    const rawText = logBuffer.map(entry => `[${entry.time}] [${entry.type.toUpperCase()}] ${entry.text}`).join('\n');
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(rawText)
         .then(() => Lampa.Noty.show('Скопированы все логи!'))
         .catch(() => fallbackCopy(rawText));
-    } else {
-      fallbackCopy(rawText);
-    }
+    } else { fallbackCopy(rawText); }
   }
 
   function fallbackCopy(text) { 
@@ -171,62 +150,34 @@
     
     const container = document.createElement('div'); 
     container.className = 'devlog-activity'; 
-    container.style.cssText = 
-      'position:fixed;top:0;left:0;width:100%;height:100%;' + 
-      'background:#1a1a1a;z-index:10000;display:flex;flex-direction:column;'; 
+    container.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:#1a1a1a;z-index:10000;display:flex;flex-direction:column;'; 
     
-    // Шапка
     const header = document.createElement('div'); 
-    header.style.cssText = 
-      'display:flex;justify-content:space-between;align-items:center;' + 
-      'padding:10px 15px;background:#111;color:#fff;font-size:18px;'; 
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 15px;background:#111;color:#fff;font-size:18px;'; 
     header.innerHTML = 'Dev Log'; 
-    
     const closeBtn = document.createElement('button'); 
     closeBtn.textContent = '✖'; 
-    closeBtn.style.cssText = 
-      'background:none;border:none;color:#fff;font-size:22px;cursor:pointer;'; 
+    closeBtn.style.cssText = 'background:none;border:none;color:#fff;font-size:22px;cursor:pointer;'; 
     closeBtn.addEventListener('click', () => container.remove()); 
     header.appendChild(closeBtn); 
     
-    // Первая панель инструментов (фильтр типа, чекбокс hideMeta)
     const toolbar1 = document.createElement('div');
-    toolbar1.style.cssText = 
-      'display:flex;align-items:center;gap:10px;padding:8px 15px;' +
-      'background:#222;color:#fff;font-size:14px;flex-wrap:wrap;';
-    
-    // Выпадающий список фильтра по типу
+    toolbar1.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 15px;background:#222;color:#fff;font-size:14px;flex-wrap:wrap;';
     const select = document.createElement('select');
-    select.style.cssText = 
-      'background:#333;color:#fff;border:1px solid #555;padding:4px 8px;border-radius:4px;';
-    select.innerHTML = `
-      <option value="all">All</option>
-      <option value="log">Log</option>
-      <option value="error">Error</option>
-      <option value="warn">Warn</option>
-      <option value="info">Info</option>
-      <option value="debug">Debug</option>
-    `;
+    select.style.cssText = 'background:#333;color:#fff;border:1px solid #555;padding:4px 8px;border-radius:4px;';
+    select.innerHTML = `<option value="all">All</option><option value="log">Log</option><option value="error">Error</option><option value="warn">Warn</option><option value="info">Info</option><option value="debug">Debug</option>`;
     select.value = filterType;
-    select.addEventListener('change', () => {
-      filterType = select.value;
-      refreshLogs();
-    });
+    select.addEventListener('change', () => { filterType = select.value; refreshLogs(); });
     
-    // Чекбокс "Скрыть время и тип"
     const labelHide = document.createElement('label');
     labelHide.style.cssText = 'display:flex;align-items:center;gap:4px;cursor:pointer;';
     const checkboxHide = document.createElement('input');
     checkboxHide.type = 'checkbox';
     checkboxHide.checked = hideMeta;
-    checkboxHide.addEventListener('change', () => {
-      hideMeta = checkboxHide.checked;
-      refreshLogs();
-    });
+    checkboxHide.addEventListener('change', () => { hideMeta = checkboxHide.checked; refreshLogs(); });
     labelHide.appendChild(checkboxHide);
     labelHide.appendChild(document.createTextNode('Скрыть время/тип'));
     
-    // Статистика
     statsSpan = document.createElement('span');
     statsSpan.style.cssText = 'margin-left:auto;font-size:12px;color:#aaa;';
     updateStats();
@@ -235,54 +186,36 @@
     toolbar1.appendChild(labelHide);
     toolbar1.appendChild(statsSpan);
     
-    // Вторая панель инструментов (поиск, настройки)
     const toolbar2 = document.createElement('div');
-    toolbar2.style.cssText = 
-      'display:flex;align-items:center;gap:10px;padding:8px 15px;' +
-      'background:#2a2a2a;color:#fff;font-size:14px;flex-wrap:wrap;';
-    
-    // Поле поиска
+    toolbar2.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 15px;background:#2a2a2a;color:#fff;font-size:14px;flex-wrap:wrap;';
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
     searchInput.placeholder = 'Поиск...';
     searchInput.style.cssText = 'padding:4px 8px;border-radius:4px;border:1px solid #555;background:#333;color:#fff;';
     searchInput.value = searchQuery;
-    searchInput.addEventListener('input', () => {
-      searchQuery = searchInput.value;
-      refreshLogs();
-    });
+    searchInput.addEventListener('input', () => { searchQuery = searchInput.value; refreshLogs(); });
     
-    // Чекбокс "Игнорировать регистр"
     const labelCase = document.createElement('label');
     labelCase.style.cssText = 'display:flex;align-items:center;gap:4px;cursor:pointer;';
     const checkboxCase = document.createElement('input');
     checkboxCase.type = 'checkbox';
     checkboxCase.checked = ignoreCase;
-    checkboxCase.addEventListener('change', () => {
-      ignoreCase = checkboxCase.checked;
-      refreshLogs();
-    });
+    checkboxCase.addEventListener('change', () => { ignoreCase = checkboxCase.checked; refreshLogs(); });
     labelCase.appendChild(checkboxCase);
     labelCase.appendChild(document.createTextNode('Aa'));
     labelCase.title = 'Игнорировать регистр';
     
-    // Кнопка сброса фильтров
     const resetBtn = document.createElement('button');
     resetBtn.textContent = 'Сброс';
     resetBtn.style.cssText = 'padding:4px 8px;background:#555;border:none;border-radius:4px;color:#fff;cursor:pointer;';
     resetBtn.addEventListener('click', () => {
-      filterType = 'all';
-      select.value = 'all';
-      searchQuery = '';
-      searchInput.value = '';
-      ignoreCase = true;
-      checkboxCase.checked = true;
-      hideMeta = false;
-      checkboxHide.checked = false;
+      filterType = 'all'; select.value = 'all';
+      searchQuery = ''; searchInput.value = '';
+      ignoreCase = true; checkboxCase.checked = true;
+      hideMeta = false; checkboxHide.checked = false;
       refreshLogs();
     });
     
-    // Пауза обновления
     const pauseBtn = document.createElement('button');
     pauseBtn.textContent = '⏸ Пауза';
     pauseBtn.style.cssText = 'padding:4px 8px;background:#555;border:none;border-radius:4px;color:#fff;cursor:pointer;';
@@ -292,7 +225,6 @@
       if (!paused) refreshLogs();
     });
     
-    // Автоскролл
     const scrollCheck = document.createElement('label');
     scrollCheck.style.cssText = 'display:flex;align-items:center;gap:4px;cursor:pointer;';
     const scrollCb = document.createElement('input');
@@ -302,7 +234,6 @@
     scrollCheck.appendChild(scrollCb);
     scrollCheck.appendChild(document.createTextNode('Автоскролл'));
     
-    // Регулировка шрифта
     fontSpan = document.createElement('span');
     fontSpan.textContent = fontSize + 'px';
     fontSpan.style.cssText = 'margin-left:4px;min-width:40px;text-align:center;';
@@ -315,14 +246,10 @@
     fontPlus.style.cssText = 'padding:2px 6px;background:#555;border:none;border-radius:4px;color:#fff;cursor:pointer;';
     fontPlus.addEventListener('click', () => changeFontSize(1));
     
-    // Переключение темы
     const themeBtn = document.createElement('button');
     themeBtn.textContent = '🌓 Тема';
     themeBtn.style.cssText = 'padding:4px 8px;background:#555;border:none;border-radius:4px;color:#fff;cursor:pointer;';
-    themeBtn.addEventListener('click', () => {
-      theme = theme === 'dark' ? 'light' : 'dark';
-      applyTheme();
-    });
+    themeBtn.addEventListener('click', () => { theme = theme === 'dark' ? 'light' : 'dark'; applyTheme(); });
     
     toolbar2.appendChild(searchInput);
     toolbar2.appendChild(labelCase);
@@ -334,64 +261,41 @@
     toolbar2.appendChild(fontPlus);
     toolbar2.appendChild(themeBtn);
     
-    // Текстовая область
     textarea = document.createElement('textarea'); 
     textarea.readOnly = true; 
-    textarea.style.cssText = 
-      'flex:1;width:100%;background:#000;color:#0f0;' + 
-      'font-family:monospace;font-size:' + fontSize + 'px;border:none;outline:none;' + 
-      'resize:none;padding:10px;' + 
-      'white-space:pre;word-break:normal;overflow-x:auto;'; 
+    textarea.style.cssText = `flex:1;width:100%;background:#000;color:#0f0;font-family:monospace;font-size:${fontSize}px;border:none;outline:none;resize:none;padding:10px;white-space:pre;word-break:normal;overflow-x:auto;`; 
     window._devLogTextArea = textarea; 
     refreshLogs();
     
-    DevLog.log('DevLog opened'); 
-    
-    // Нижняя панель с кнопками
     const footer = document.createElement('div'); 
-    footer.style.cssText = 
-      'display:flex;padding:10px;gap:10px;justify-content:flex-end;'; 
-    
+    footer.style.cssText = 'display:flex;padding:10px;gap:10px;justify-content:flex-end;'; 
     const copyFilteredBtn = document.createElement('button'); 
     copyFilteredBtn.textContent = 'Копировать (фильтр)'; 
-    copyFilteredBtn.style.cssText = 
-      'padding:10px 20px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;'; 
+    copyFilteredBtn.style.cssText = 'padding:10px 20px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;'; 
     copyFilteredBtn.addEventListener('click', () => { 
       const logText = textarea.value; 
-      if (navigator.clipboard && navigator.clipboard.writeText) { 
-        navigator.clipboard.writeText(logText)
-          .then(() => Lampa.Noty.show('Скопировано (фильтр)')) 
-          .catch(() => fallbackCopy(logText)); 
-      } else { 
-        fallbackCopy(logText); 
-      } 
+      if (navigator.clipboard && navigator.clipboard.writeText) 
+        navigator.clipboard.writeText(logText).then(() => Lampa.Noty.show('Скопировано (фильтр)')).catch(() => fallbackCopy(logText)); 
+      else fallbackCopy(logText); 
     });
-    
     const copyRawBtn = document.createElement('button');
     copyRawBtn.textContent = 'Копировать все';
     copyRawBtn.style.cssText = 'padding:10px 20px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;';
     copyRawBtn.addEventListener('click', copyRawLogs);
-    
     const exportBtn = document.createElement('button');
     exportBtn.textContent = 'Экспорт TXT';
     exportBtn.style.cssText = 'padding:10px 20px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;';
     exportBtn.addEventListener('click', exportToFile);
-    
     const clearBtn = document.createElement('button'); 
     clearBtn.textContent = 'Очистить'; 
-    clearBtn.style.cssText = 
-      'padding:10px 20px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;'; 
-    clearBtn.addEventListener('click', () => {
-      DevLog.clear();
-      refreshLogs();
-    });
+    clearBtn.style.cssText = 'padding:10px 20px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;'; 
+    clearBtn.addEventListener('click', () => { DevLog.clear(); refreshLogs(); });
     
     footer.appendChild(copyFilteredBtn); 
     footer.appendChild(copyRawBtn);
     footer.appendChild(exportBtn);
     footer.appendChild(clearBtn); 
     
-    // Сборка интерфейса
     container.appendChild(header);
     container.appendChild(toolbar1);
     container.appendChild(toolbar2);
@@ -399,15 +303,25 @@
     container.appendChild(footer); 
     document.body.appendChild(container); 
     applyTheme();
+    if (window.DevLog) window.DevLog.log('DevLog opened');
   } 
 
-  // Перехват console
+  window.DevLog = { 
+    log: function() { addLog('log', arguments); }, 
+    error: function() { addLog('error', arguments); }, 
+    warn: function() { addLog('warn', arguments); }, 
+    info: function() { addLog('info', arguments); }, 
+    debug: function() { addLog('debug', arguments); }, 
+    clear: function() { logBuffer = []; if (window._devLogTextArea) refreshLogs(); }, 
+    getLogs: function() { return logBuffer.slice(); }, 
+    add: function(type) { addLog(type, Array.prototype.slice.call(arguments, 1)); } 
+  }; 
+
   function initLogger() { 
     const handler = { 
       get(target, prop) { 
         const original = target[prop]; 
-        if (typeof original === 'function' && 
-            ['log','error','warn','info','debug'].includes(prop)) { 
+        if (typeof original === 'function' && ['log','error','warn','info','debug'].includes(prop)) { 
           return function(...args) { 
             original.apply(target, args); 
             addLog(prop, args); 
@@ -416,27 +330,15 @@
         return original; 
       } 
     }; 
-    const currentConsole = window.console; 
-    window.console = new Proxy(currentConsole, handler); 
+    window.console = new Proxy(window.console, handler); 
   } 
 
-  function waitForLampa(callback) { 
-    if (window.Lampa && Lampa.Component) { 
-      callback(); 
-    } else { 
-      const check = setInterval(() => { 
-        if (window.Lampa && Lampa.Component) { 
-          clearInterval(check); 
-          callback(); 
-        } 
-      }, 200); 
-    } 
-  } 
+  // ========== НАДЁЖНОЕ СОЗДАНИЕ КНОПКИ ==========
+  function createFabButton() {
+    // Удаляем старую кнопку, если есть
+    const oldFab = document.getElementById('devlog-fab');
+    if (oldFab) oldFab.remove();
 
-  waitForLampa(() => { 
-    initLogger(); 
-    
-    // Плавающая кнопка
     const fab = document.createElement('div'); 
     fab.id = 'devlog-fab'; 
     fab.innerHTML = 'LOG'; 
@@ -447,15 +349,52 @@
       'font-weight:bold;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.5);' + 
       'cursor:pointer;user-select:none;'; 
     fab.addEventListener('click', openDevLog); 
-    document.body.appendChild(fab); 
-    
-    // Пункт в меню Lampa
-    try { 
-      Lampa.Menu.add('plugins', { 
-        title: 'Dev Log', 
-        icon: 'log', 
-        action: openDevLog 
-      }); 
-    } catch(e) {} 
-  }); 
+    document.body.appendChild(fab);
+    console.log('[DevLog] Кнопка LOG добавлена');
+    return fab;
+  }
+
+  function addToLampaMenu() {
+    try {
+      if (window.Lampa && Lampa.Menu && Lampa.Menu.add) {
+        Lampa.Menu.add('plugins', { 
+          title: 'Dev Log', 
+          icon: 'log', 
+          action: openDevLog 
+        });
+      }
+    } catch(e) { console.warn('[DevLog] Не удалось добавить пункт в меню Lampa', e); }
+  }
+
+  // Запуск с несколькими попытками
+  let initAttempts = 0;
+  function initialize() {
+    initAttempts++;
+    if (document.body) {
+      initLogger();
+      createFabButton();
+      addToLampaMenu();
+    } else {
+      if (initAttempts < 10) {
+        setTimeout(initialize, 200);
+      } else {
+        console.error('[DevLog] Не удалось добавить кнопку: body не найден');
+      }
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initialize);
+  } else {
+    initialize();
+  }
+
+  // Дополнительная страховка – повтор через 2 секунды (если кнопку кто-то удалил)
+  setTimeout(() => {
+    if (!document.getElementById('devlog-fab')) {
+      console.warn('[DevLog] Кнопка LOG отсутствует – создаём заново');
+      createFabButton();
+    }
+  }, 2000);
+
 })();
