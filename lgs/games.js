@@ -1,83 +1,105 @@
-(function() {
-    // Данные игр (замените на свои)
-    var gamesList = [
-        {
-            title: '2048',
-            description: 'Головоломка с числами',
-            image: 'https://example.com/2048.jpg',
-            url: 'https://play2048.co/'
-        },
-        {
-            title: 'Flappy Bird',
-            description: 'Классический флеш-подобный летун',
-            image: 'https://example.com/flappy.jpg',
-            url: 'https://flappybird.io/'
+(function(){
+    // === НАСТРОЙКИ ===
+    var GAMES_SOURCE = 'https://sekant242.github.io/tvSA/lgs/games_list.json';   // URL со списком игр (JSON)
+    var CACHE_KEY = 'games_cache';
+    
+    // === ЗАГРУЗКА СПИСКА ИГР ===
+    function loadGames(callback){
+        var cached = Lampa.Storage.get(CACHE_KEY);
+        if (cached && cached.length) {
+            callback(cached);
+            return;
         }
-    ];
-
-    // Функция открытия браузера с игрой
-    function openGame(url, title) {
-        Lampa.Activity.push({
-            url: url,
-            title: title,
-            component: 'browser',
-            fullscreen: true
-        });
+        fetch(GAMES_SOURCE)
+            .then(r => r.json())
+            .then(data => {
+                Lampa.Storage.set(CACHE_KEY, data);
+                callback(data);
+            })
+            .catch(e => {
+                console.error('Ошибка загрузки игр:', e);
+                if (cached) callback(cached);
+                else callback([]);
+            });
     }
-
-    // Функция показа списка игр
-    function showGameCenter() {
-        var items = gamesList.map(function(game) {
-            return {
-                title: game.title,
-                description: game.description,
-                image: game.image,
-                url: game.url
-            };
-        });
-
-        Lampa.Activity.push({
-            component: 'list',
+    
+    // === КОМПОНЕНТ ДЛЯ ОТОБРАЖЕНИЯ ИГР (СПИСОК КАРТОЧЕК) ===
+    function createGamesListTemplate(){
+        return {
+            type: 'list',
             title: 'Игровая комната',
-            items: items,
-            listTemplate: {
-                type: 'list',
-                style: 'covers',
-                onSelect: function(item) {
-                    if (item.url) {
-                        openGame(item.url, item.title);
-                    }
+            style: 'covers',
+            fields: ['title', 'description', 'image', 'url'],
+            onSelect: function(item){
+                if (item && item.url) {
+                    Lampa.Activity.push({
+                        component: 'browser',
+                        url: item.url,
+                        title: item.title || 'Игра'
+                    });
                 }
             }
+        };
+    }
+    
+    // === ОТКРЫТИЕ ИГРОВОГО ЦЕНТРА ===
+    function showGames(){
+        loadGames(function(games){
+            var items = games.map(function(game){
+                return {
+                    title: game.name || game.title || 'Без названия',
+                    description: game.description || '',
+                    image: game.image || '',
+                    url: game.url || game.link
+                };
+            });
+            Lampa.Activity.push({
+                component: 'list',
+                title: 'Игры',
+                items: items,
+                listTemplate: createGamesListTemplate()
+            });
         });
     }
-
-    // Добавление пункта в боковое меню (проверенный способ)
-    function addGameToMenu() {
-        var menuItem = {
-            title: 'Игры',
-            icon: 'sports_esports',  // стандартная иконка Material (если есть тема)
-            action: function() {
-                showGameCenter();
-            }
-        };
+    
+    // === ДОБАВЛЕНИЕ ПУНКТА В БОКОВОЕ МЕНЮ ===
+    function addMenuButton(){
+        // Проверяем, не добавлен ли уже пункт
+        if (Lampa.Menu.get('games')) return;
         
+        // Основной способ – Lampa.Menu.add (работает во всех версиях)
         if (typeof Lampa.Menu.add === 'function') {
-            Lampa.Menu.add(menuItem);
+            Lampa.Menu.add({
+                id: 'games',
+                title: 'Игры',
+                icon: '',          // пустая иконка – строка, а не объект
+                action: showGames
+            });
+        } 
+        // Запасной вариант для очень старых версий
+        else if (typeof Lampa.Menu.addButton === 'function') {
+            Lampa.Menu.addButton({
+                title: 'Игры',
+                icon: '',
+                action: showGames
+            });
         } else {
-            console.error('Lampa.Menu.add не найден');
+            console.warn('Не удалось добавить пункт меню: Lampa.Menu недоступен');
         }
     }
-
-    // Ждём готовности Lampa
+    
+    // === ИНИЦИАЛИЗАЦИЯ ПОСЛЕ ЗАГРУЗКИ LAMPA ===
     if (typeof Lampa !== 'undefined') {
-        if (Lampa.events && Lampa.events.on) {
-            Lampa.events.on('appready', addGameToMenu);
+        // Ждём события appready
+        if (Lampa.Timer && Lampa.Timer.add) {
+            Lampa.Timer.add('appready', addMenuButton);
+        } else if (Lampa.events && Lampa.events.on) {
+            Lampa.events.on('appready', addMenuButton);
         } else {
-            // Если событие appready недоступно, добавляем с задержкой
-            setTimeout(addGameToMenu, 1000);
+            // Если ничего нет – просто запускаем через небольшую задержку
+            setTimeout(addMenuButton, 1500);
         }
     } else {
-        console.error('Lampa не загружена');
+        console.error('Lampa не найдена');
     }
 })();
