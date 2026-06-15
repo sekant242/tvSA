@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        :root { --bg: #0a0a0a; --win-bg: #9bbc0f; --accent: #0f380f; --border: #555; }
+        body {
+            margin: 0; background: var(--bg); color: #fff;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            height: 100vh; overflow: hidden; user-select: none; touch-action: none;
+        }
+
+        #game-container {
+            position: relative; width: 320px; 
+            background: #1a1a1a; border: 4px solid var(--border);
+            border-radius: 12px; margin-top: 10px; overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        /* Панель счета */
+        #hud { 
+            height: 90px; background: #222; padding: 10px; 
+            display: flex; flex-direction: column; justify-content: center;
+            border-bottom: 4px solid var(--border);
+            position: relative;
+        }
+        #hud div { display: flex; justify-content: space-between; align-items: center; }
+        #menu-btn {
+            position: absolute; top: 8px; right: 12px;
+            background: #444; border: none; color: white;
+            font-size: 20px; width: 36px; height: 36px;
+            border-radius: 18px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold;
+        }
+        #menu-btn:active { transform: scale(0.95); }
+
+        /* ИГРОВОЕ ПОЛЕ */
+        #canvas-wrapper { position: relative; width: 320px; height: 320px; background: #000; }
+        canvas { 
+            display: block; width: 320px; height: 320px; 
+            image-rendering: pixelated; 
+            background: var(--win-bg);
+            outline: 2px solid rgba(255,255,255,0.1);
+        }
+        
+        /* Визуальная рамка */
+        #canvas-wrapper::after {
+            content: ""; position: absolute; inset: 0;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.5); pointer-events: none;
+            border: 2px solid rgba(0,0,0,0.2);
+        }
+
+        /* Управление */
+        #ui-controls { width: 320px; height: 160px; display: flex; justify-content: center; align-items: center; margin-top: 10px; }
+        #dpad { display: grid; grid-template-columns: repeat(3, 60px); gap: 8px; }
+        .btn-ctrl { 
+            width: 60px; height: 60px; background: #333; color: #fff; 
+            border-radius: 12px; display: flex; align-items: center; 
+            justify-content: center; font-size: 24px; border-bottom: 4px solid #000;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        .btn-ctrl:active { transform: translateY(2px); border-bottom: 1px solid #000; }
+
+        #joystick-outer { 
+            width: 130px; height: 130px; background: #222; border-radius: 50%; 
+            position: relative; border: 3px solid #444; touch-action: none;
+        }
+        #joystick-inner { 
+            width: 50px; height: 50px; background: #2b8cff; border-radius: 50%; 
+            position: absolute; left: 40px; top: 40px; box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+            transition: transform 0.05s ease-out;
+        }
+
+        /* Меню */
+        .overlay {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.95);
+            z-index: 100; padding: 20px; overflow-y: auto; display: flex; flex-direction: column;
+        }
+        .world-card { background: #222; border: 1px solid #444; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+        .level-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
+        .lvl-btn { 
+            background: #444; border: none; color: #fff; padding: 10px 0; 
+            border-radius: 4px; font-weight: bold; font-size: 13px;
+            cursor: pointer;
+        }
+        .lvl-btn:disabled { opacity: 0.2; cursor: default; }
+        .lvl-btn.boss { background: #d32; }
+        .lvl-btn.mini { background: #2a2; }
+        
+        .btn-main { background: #2b8cff; color: white; border: none; padding: 12px; border-radius: 8px; width: 100%; font-weight: bold; margin-top: 10px; cursor: pointer; }
+
+        /* Темы миров */
+        .theme-w1 { --win-bg: #9bbc0f; --accent: #0f380f; }
+        .theme-w2 { --win-bg: #8bac0f; --accent: #1a391a; }
+        .theme-w3 { --win-bg: #222; --accent: #fff; }
+        .theme-w4 { --win-bg: #0f172a; --accent: #38bdf8; }
+        .theme-w5 { --win-bg: #000; --accent: #f0f; }
+    </style>
+</head>
+<body class="theme-w1">
+
+<div id="game-container">
+    <div id="hud">
+        <button id="menu-btn">☰</button>
+        <div>
+            <span style="color:#aaa; font-size:12px;">МИР <span id="info-world">1</span></span>
+            <span id="mode-name" style="color:#2b8cff; font-weight:bold; font-size:12px;">КЛАССИКА</span>
+        </div>
+        <div style="margin: 5px 0;">
+            <span style="font-size:26px;">🍎 <span id="info-score" style="color:#fff">0</span></span>
+            <span id="target-txt" style="background:#444; padding:2px 8px; border-radius:4px; font-size:12px;">ЦЕЛЬ: 5</span>
+        </div>
+        <div id="boss-ui" style="display:none; height:8px; background:#111; border-radius:4px; overflow:hidden; border:1px solid #444;">
+            <div id="boss-hp" style="width:100%; height:100%; background:#f22;"></div>
+        </div>
+    </div>
+
+    <div id="canvas-wrapper">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div id="menu-levels" class="overlay">
+        <h2 style="text-align:center; margin:0 0 15px 0;">SNAKE EVOLUTION 2</h2>
+        <label style="display:flex; align-items:center; background:#333; padding:10px; border-radius:8px; margin-bottom:15px; font-size:14px;">
+            <input type="checkbox" id="unlock-all" onchange="renderWorlds()" style="margin-right:10px;"> ОТКРЫТЬ ВСЕ УРОВНИ
+        </label>
+        <div id="worlds-list"></div>
+        <button class="btn-main" style="background:#555" onclick="toggleMenu('menu-settings', true)">⚙ НАСТРОЙКИ</button>
+    </div>
+
+    <div id="menu-settings" class="overlay" style="display:none">
+        <h2>НАСТРОЙКИ</h2>
+        <div style="flex:1">
+            <p>УПРАВЛЕНИЕ:</p>
+            <select id="set-ctrl" onchange="updateSettings()" style="width:100%; padding:12px; border-radius:8px; background:#333; color:white; border:none;">
+                <option value="buttons">Крестовина</option>
+                <option value="joystick">Джойстик</option>
+                <option value="gestures">Свайпы (Весь экран)</option>
+            </select>
+            <p>ГРОМКОСТЬ:</p>
+            <input type="range" id="set-vol" min="0" max="1" step="0.1" value="0.3" oninput="updateSettings()" style="width:100%;">
+        </div>
+        <button class="btn-main" onclick="toggleMenu('menu-settings', false)">СОХРАНИТЬ</button>
+    </div>
+</div>
+
+<div id="ui-controls">
+    <div id="dpad">
+        <div style="grid-column: 2" class="btn-ctrl" data-dir="UP">▲</div>
+        <div style="grid-column: 1" class="btn-ctrl" data-dir="LEFT">◀</div>
+        <div style="grid-column: 2" class="btn-ctrl" data-dir="DOWN">▼</div>
+        <div style="grid-column: 3; margin-top: -68px" class="btn-ctrl" data-dir="RIGHT">▶</div>
+    </div>
+    <div id="joystick-outer" style="display:none">
+        <div id="joystick-inner"></div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const gridSize = 20, tileCount = 16;
+    canvas.width = canvas.height = 320;
+
+    let snake = [], foods = [], obstacles = [];
+    let dx = 0, dy = 0, nextDx = 0, nextDy = 0;
+    let score = 0, target = 5, curW = 1, curL = 1;
+    let gameInterval = null, isBoss = false, boss = null;
+    let audioCtx = null;
+    let lastInputTime = 0;
+    let lastJoystickTime = 0;
+
+    let progress = parseInt(localStorage.getItem('snake2_progress')) || 1;
+    let cfg = JSON.parse(localStorage.getItem('snake2_cfg')) || { vol: 0.3, ctrl: 'buttons' };
+
+    // Helper: проверка свободной клетки (не змея, не препятствие, не еда)
+    function isFreeCell(x, y) {
+        if (x < 0 || x >= tileCount || y < 0 || y >= tileCount) return false;
+        if (snake.some(s => s.x === x && s.y === y)) return false;
+        if (obstacles.some(o => o.x === x && o.y === y)) return false;
+        if (foods.some(f => f.x === x && f.y === y)) return false;
+        return true;
+    }
+
+    function renderWorlds() {
+        const unlockAll = document.getElementById('unlock-all').checked;
+        const list = document.getElementById('worlds-list');
+        list.innerHTML = '';
+        const names = ["РЕТРО", "МОНОХРОМ", "8-БИТ", "НЕОН", "КИБЕР"];
+        
+        for(let w = 1; w <= 5; w++) {
+            let card = document.createElement('div');
+            card.className = 'world-card';
+            card.innerHTML = `<div style="font-size:12px; color:#aaa; margin-bottom:5px">МИР ${w}: ${names[w-1]}</div>`;
+            let grid = document.createElement('div');
+            grid.className = 'level-grid';
+            for(let l = 1; l <= 10; l++) {
+                let id = (w-1)*10 + l;
+                let locked = !unlockAll && id > progress;
+                let cls = (l===10) ? 'boss' : (l===5 ? 'mini' : '');
+                grid.innerHTML += `<button class="lvl-btn ${cls}" ${locked ? 'disabled' : ''} onclick="startLevel(${w}, ${l})">${l}</button>`;
+            }
+            card.appendChild(grid);
+            list.appendChild(card);
+        }
+    }
+
+    function updateSettings() {
+        cfg.vol = parseFloat(document.getElementById('set-vol').value);
+        cfg.ctrl = document.getElementById('set-ctrl').value;
+        localStorage.setItem('snake2_cfg', JSON.stringify(cfg));
+        document.getElementById('dpad').style.display = (cfg.ctrl === 'buttons') ? 'grid' : 'none';
+        document.getElementById('joystick-outer').style.display = (cfg.ctrl === 'joystick') ? 'block' : 'none';
+    }
+
+    function toggleMenu(id, show) {
+        if (gameInterval) {
+            clearInterval(gameInterval);
+            gameInterval = null;
+        }
+        if (id === 'menu-settings' && show) {
+            document.getElementById('menu-levels').style.display = 'none';
+        } else if (id === 'menu-levels' && show) {
+            document.getElementById('menu-settings').style.display = 'none';
+        }
+        document.getElementById(id).style.display = show ? 'flex' : 'none';
+    }
+
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            audioCtx.resume().catch(e => console.log("Audio resume failed", e));
+        }
+    }
+    
+    function playSfx(f, t='square', d=0.1) {
+        if (!audioCtx || cfg.vol === 0) return;
+        // гарантируем, что контекст активен
+        audioCtx.resume().then(() => {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = t;
+            o.frequency.setValueAtTime(f, audioCtx.currentTime);
+            g.gain.setValueAtTime(cfg.vol * 0.2, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + d);
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.start();
+            o.stop(audioCtx.currentTime + d);
+        }).catch(e => console.log("Audio error", e));
+    }
+
+    function startLevel(w, l) {
+        // Проверка разблокировки
+        const unlockAll = document.getElementById('unlock-all').checked;
+        const levelId = (w-1)*10 + l;
+        if (!unlockAll && levelId > progress) {
+            alert("Этот уровень ещё не открыт!");
+            return;
+        }
+
+        if (gameInterval) clearInterval(gameInterval);
+        curW = w; curL = l;
+        document.body.className = `theme-w${w}`;
+        toggleMenu('menu-levels', false);
+        
+        score = 0; 
+        target = (l === 10) ? 10 : (l === 5 ? 15 : 5 + l);
+        isBoss = (l === 10);
+        snake = [{x: 8, y: 12}, {x: 8, y: 13}, {x: 8, y: 14}];
+        dx = 0; dy = -1; nextDx = 0; nextDy = -1;
+        obstacles = [];
+        foods = [];
+
+        // Генерация препятствий
+        if (l > 1 && !isBoss) {
+            let count = Math.min(l + w, tileCount * tileCount - snake.length - 1);
+            let attempts = 0;
+            while (obstacles.length < count && attempts < 2000) {
+                let x = Math.floor(Math.random() * tileCount);
+                let y = Math.floor(Math.random() * tileCount);
+                if (isFreeCell(x, y)) {
+                    obstacles.push({x, y});
+                }
+                attempts++;
+            }
+        }
+
+        if (isBoss) {
+            boss = { x: 6, y: 2, w: 4, h: 2, hp: 100, vx: 0.5 + (w*0.1) };
+            document.getElementById('boss-ui').style.display = 'block';
+            document.getElementById('target-txt').innerText = "ЗАРЯД: 10";
+            document.getElementById('boss-hp').style.width = "100%";
+        } else {
+            document.getElementById('boss-ui').style.display = 'none';
+            document.getElementById('target-txt').innerText = `ЦЕЛЬ: ${target}`;
+        }
+
+        document.getElementById('info-world').innerText = w;
+        document.getElementById('info-score').innerText = "0";
+        document.getElementById('mode-name').innerText = isBoss ? "БОСС" : (l===5 ? "МИНИ-ИГРА" : "КЛАССИКА");
+        
+        spawnFood(1);
+        
+        let speed = 180 - (w*15) - (l*2);
+        speed = Math.max(70, Math.min(180, speed));
+        gameInterval = setInterval(update, speed);
+    }
+
+    function update() {
+        dx = nextDx; dy = nextDy;
+        let head = {x: snake[0].x + dx, y: snake[0].y + dy};
+
+        // Коллизии с границами, собой, препятствиями
+        if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount ||
+            snake.some(s => s.x === head.x && s.y === head.y) ||
+            obstacles.some(o => o.x === head.x && o.y === head.y)) {
+            gameOver();
+            return;
+        }
+
+        // Босс-логика
+        if (isBoss && boss) {
+            boss.x += boss.vx;
+            if (boss.x <= 0) boss.x = 0;
+            if (boss.x + boss.w >= tileCount) boss.x = tileCount - boss.w;
+            if (boss.x <= 0 || boss.x + boss.w >= tileCount) boss.vx *= -1;
+            
+            if (score >= 10 && head.x >= boss.x && head.x < boss.x + boss.w && head.y >= boss.y && head.y < boss.y + boss.h) {
+                boss.hp -= 20;
+                playSfx(800, 'sawtooth');
+                if (boss.hp <= 0) {
+                    winLevel();
+                    return;
+                }
+                // Отталкивание: смещаем голову вниз на 2 клетки
+                head.y += 2;
+                // Проверка после смещения
+                if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount ||
+                    snake.some(s => s.x === head.x && s.y === head.y) ||
+                    obstacles.some(o => o.x === head.x && o.y === head.y)) {
+                    gameOver();
+                    return;
+                }
+                
+                // Проверяем, не съела ли голова еду после смещения
+                let ateAfter = false;
+                for (let i = 0; i < foods.length; i++) {
+                    if (head.x === foods[i].x && head.y === foods[i].y) {
+                        score++;
+                        foods.splice(i,1);
+                        ateAfter = true;
+                        break;
+                    }
+                }
+                if (ateAfter) {
+                    document.getElementById('info-score').innerText = score;
+                    playSfx(600 + score*20);
+                    spawnFood(1);
+                    if (!isBoss && score >= target) {
+                        winLevel();
+                        return;
+                    }
+                }
+                // Обновляем змею с новой головой
+                snake.unshift(head);
+                if (!ateAfter) {
+                    snake.pop();
+                }
+                draw();
+                return; // пропускаем дальнейшую обработку в этом тике
+            }
+        }
+
+        // Стандартное движение
+        snake.unshift(head);
+        let ate = false;
+        for (let i = 0; i < foods.length; i++) {
+            if (head.x === foods[i].x && head.y === foods[i].y) {
+                score++;
+                foods.splice(i,1);
+                ate = true;
+                break;
+            }
+        }
+
+        if (ate) {
+            document.getElementById('info-score').innerText = score;
+            playSfx(600 + score*20);
+            spawnFood(1);
+            if (!isBoss && score >= target) {
+                winLevel();
+                return;
+            }
+        } else {
+            snake.pop();
+        }
+        draw();
+    }
+
+    function draw() {
+        const theme = getComputedStyle(document.body);
+        ctx.fillStyle = theme.getPropertyValue('--win-bg');
+        ctx.fillRect(0, 0, 320, 320);
+
+        // Препятствия
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        obstacles.forEach(o => ctx.fillRect(o.x*gridSize, o.y*gridSize, gridSize-1, gridSize-1));
+
+        // Еда
+        ctx.fillStyle = (curW >= 3) ? "#f44" : theme.getPropertyValue('--accent');
+        foods.forEach(f => ctx.fillRect(f.x*gridSize+4, f.y*gridSize+4, gridSize-8, gridSize-8));
+
+        // Змейка
+        snake.forEach((s, i) => {
+            ctx.fillStyle = (curW === 5) ? `hsl(${(Date.now()/10+i*15)%360},100%,50%)` : theme.getPropertyValue('--accent');
+            ctx.fillRect(s.x*gridSize+1, s.y*gridSize+1, gridSize-2, gridSize-2);
+        });
+
+        if (isBoss && boss) {
+            ctx.fillStyle = (score >= 10 && Date.now()%200<100) ? "#fff" : "#911";
+            let drawX = boss.x * gridSize;
+            let drawY = boss.y * gridSize;
+            ctx.fillRect(drawX, drawY, boss.w*gridSize, boss.h*gridSize);
+            let hpPercent = Math.max(0, boss.hp);
+            document.getElementById('boss-hp').style.width = hpPercent + "%";
+        }
+    }
+
+    function spawnFood(n) {
+        let attempts = 0;
+        while (foods.length < n && attempts < 2000) {
+            let f = { x: Math.floor(Math.random()*tileCount), y: Math.floor(Math.random()*tileCount) };
+            if (isFreeCell(f.x, f.y)) {
+                foods.push(f);
+            }
+            attempts++;
+        }
+        // Если всё равно не удалось, пройти по всем клеткам и вставить первую свободную
+        if (foods.length < n) {
+            for (let i = 0; i < tileCount; i++) {
+                for (let j = 0; j < tileCount; j++) {
+                    if (isFreeCell(i, j) && foods.length < n) {
+                        foods.push({x:i, y:j});
+                    }
+                }
+            }
+        }
+        // Если после всего еды нет и цель не достигнута — игра проиграна
+        if (foods.length === 0 && !isBoss && score < target) {
+            gameOver();
+        }
+    }
+
+    function winLevel() {
+        if (gameInterval) clearInterval(gameInterval);
+        gameInterval = null;
+        let id = (curW-1)*10 + curL;
+        if (id === progress) {  // только если это следующий неоткрытый уровень
+            progress = id + 1;
+            localStorage.setItem('snake2_progress', progress);
+        }
+        alert("УРОВЕНЬ ПРОЙДЕН!");
+        renderWorlds();
+        toggleMenu('menu-levels', true);
+    }
+
+    function gameOver() {
+        if (gameInterval) clearInterval(gameInterval);
+        gameInterval = null;
+        playSfx(100, 'sawtooth');
+        alert("ИГРА ОКОНЧЕНА");
+        toggleMenu('menu-levels', true);
+    }
+
+    // Обработка ввода с минимальной задержкой
+    function handleInput(dir) {
+        let now = Date.now();
+        if (now - lastInputTime < 30) return; // лёгкий дебаунс, чтобы избежать двойных поворотов
+        lastInputTime = now;
+        
+        if (dir === 'UP' && dy === 0) { nextDx = 0; nextDy = -1; }
+        if (dir === 'DOWN' && dy === 0) { nextDx = 0; nextDy = 1; }
+        if (dir === 'LEFT' && dx === 0) { nextDx = -1; nextDy = 0; }
+        if (dir === 'RIGHT' && dx === 0) { nextDx = 1; nextDy = 0; }
+    }
+
+    // Джойстик с троттлингом (уменьшен)
+    const outer = document.getElementById('joystick-outer');
+    const inner = document.getElementById('joystick-inner');
+    let joystickActive = false;
+
+    function handleJoystickMove(e) {
+        if (!joystickActive) return;
+        e.preventDefault();
+        const rect = outer.getBoundingClientRect();
+        const centerX = rect.left + rect.width/2;
+        const centerY = rect.top + rect.height/2;
+        let x, y;
+        if (e.touches) {
+            x = e.touches[0].clientX - centerX;
+            y = e.touches[0].clientY - centerY;
+        } else {
+            return;
+        }
+        const dist = Math.hypot(x, y);
+        const angle = Math.atan2(y, x);
+        const maxDist = rect.width/2;
+        const moveDist = Math.min(dist, maxDist);
+        const offsetX = Math.cos(angle) * moveDist;
+        const offsetY = Math.sin(angle) * moveDist;
+        inner.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+        
+        if (dist > 20) {
+            let now = Date.now();
+            if (now - lastJoystickTime > 80) {
+                lastJoystickTime = now;
+                if (Math.abs(x) > Math.abs(y)) {
+                    handleInput(x > 0 ? 'RIGHT' : 'LEFT');
+                } else {
+                    handleInput(y > 0 ? 'DOWN' : 'UP');
+                }
+            }
+        }
+    }
+
+    function startJoystick(e) {
+        joystickActive = true;
+        initAudio();
+        handleJoystickMove(e);
+    }
+    function endJoystick() {
+        joystickActive = false;
+        inner.style.transform = 'translate(0,0)';
+    }
+    outer.addEventListener('touchstart', startJoystick);
+    outer.addEventListener('touchmove', handleJoystickMove);
+    outer.addEventListener('touchend', endJoystick);
+    outer.addEventListener('touchcancel', endJoystick);
+
+    // Свайпы только на canvas
+    let swipeStart = null;
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        swipeStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        initAudio();
+    });
+    canvas.addEventListener('touchend', (e) => {
+        if (cfg.ctrl !== 'gestures' || !swipeStart) return;
+        const dx = e.changedTouches[0].clientX - swipeStart.x;
+        const dy = e.changedTouches[0].clientY - swipeStart.y;
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
+            handleInput(dx > 0 ? 'RIGHT' : 'LEFT');
+        } else if (Math.abs(dy) > 30) {
+            handleInput(dy > 0 ? 'DOWN' : 'UP');
+        }
+        swipeStart = null;
+    });
+    canvas.addEventListener('touchcancel', () => { swipeStart = null; });
+
+    // Клавиатура с debounce
+    let lastKeyTime = 0;
+    document.addEventListener('keydown', (e) => {
+        const key = e.key.replace('Arrow', '').toUpperCase();
+        if (['UP', 'DOWN', 'LEFT', 'RIGHT'].includes(key)) {
+            e.preventDefault();
+            let now = Date.now();
+            if (now - lastKeyTime > 60) {
+                lastKeyTime = now;
+                handleInput(key);
+            }
+        }
+    });
+
+    // Кнопки мыши и касания для dpad
+    document.querySelectorAll('.btn-ctrl').forEach(btn => {
+        const dir = btn.getAttribute('data-dir');
+        if (!dir) return;
+        const handler = (e) => {
+            e.preventDefault();
+            handleInput(dir);
+        };
+        btn.addEventListener('mousedown', handler);
+        btn.addEventListener('touchstart', handler, { passive: false });
+    });
+
+    // Кнопка меню
+    document.getElementById('menu-btn').addEventListener('click', () => {
+        if (gameInterval) clearInterval(gameInterval);
+        gameInterval = null;
+        toggleMenu('menu-levels', true);
+    });
+
+    // Инициализация
+    document.getElementById('set-vol').value = cfg.vol;
+    document.getElementById('set-ctrl').value = cfg.ctrl;
+    renderWorlds();
+    updateSettings();
+
+    // Запускаем меню уровней по умолчанию
+    toggleMenu('menu-levels', true);
+    // Активация аудио по первому касанию
+    document.body.addEventListener('touchstart', initAudio, { once: true });
+    document.body.addEventListener('click', initAudio, { once: true });
+</script>
+</body>
+</html>
