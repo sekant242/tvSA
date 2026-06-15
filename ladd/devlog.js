@@ -1,29 +1,33 @@
 /**
- * DevLog for Lampa v2.0
- * Улучшенная версия: безопасный перехват консоли, управление памятью, чистый UI, интеграция с Lampa
- * (c) 2026
+ * DevLog for Lampa v2.1 — полный вывод, без урезки
  */
 
 (function(global) {
     'use strict';
 
-    // ---------- НАСТРОЙКИ ПО УМОЛЧАНИЮ ----------
+    // ----- ЩАДЯЩИЕ ЛИМИТЫ ПО УМОЛЧАНИЮ (можно убрать вообще) -----
     const DEFAULTS = {
-        maxLogs: 2000,            // максимальное количество логов в буфере
-        autoStart: true,          // автоматически начинать перехват
-        showButton: true,         // показывать плавающую кнопку LOG
+        maxLogs: 5000,               // много логов
+        autoStart: true,
+        showButton: true,
         buttonPosition: { right: '20px', bottom: '20px' },
-        defaultFilter: 'all',     // all, log, warn, error, info, debug
-        enableLampaMenu: true,    // добавить пункт в меню Lampa
-        notifyOnError: true,      // показывать уведомления Lampa при ошибках
-        maxObjectDepth: 3,        // глубина сериализации объектов
-        maxStringLength: 500      // ограничение длины строк при отображении
+        defaultFilter: 'all',
+        enableLampaMenu: true,
+        notifyOnError: true,
+        maxObjectDepth: 10,          // глубокая рекурсия
+        maxStringLength: 10000,      // очень длинные строки
+        maxOutputLength: 50000       // общая длина одного лога в UI (чтобы не завесить)
     };
 
-    // ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ----------
-    function safeStringify(obj, depth = DEFAULTS.maxObjectDepth, maxLen = DEFAULTS.maxStringLength) {
-        if (depth <= 0) return '[Object]';
+    // ----- ФУНКЦИЯ ПОЛНОЙ СЕРИАЛИЗАЦИИ (без потери данных) -----
+    function fullStringify(obj, depth = DEFAULTS.maxObjectDepth, maxLen = DEFAULTS.maxStringLength) {
+        if (depth <= 0) return (typeof obj === 'object' && obj !== null) ? '[Object]' : String(obj);
         try {
+            // Обработка ошибок (Error, TypeError и т.д.)
+            if (obj instanceof Error) {
+                return `${obj.name}: ${obj.message}\nStack: ${obj.stack || '(no stack)'}`;
+            }
+            // Циклические ссылки
             let seen = new WeakSet();
             let result = JSON.stringify(obj, (key, value) => {
                 if (typeof value === 'object' && value !== null) {
@@ -31,31 +35,53 @@
                     seen.add(value);
                 }
                 if (typeof value === 'string' && value.length > maxLen) {
-                    return value.slice(0, maxLen) + '…';
+                    return value.slice(0, maxLen) + '… [truncated]';
                 }
                 return value;
-            }, 2);
+            }, 2); // отступ 2 пробела для читаемости
             if (result === undefined) return String(obj);
-            if (result.length > 10000) return result.slice(0, 10000) + '… (truncated)';
+            if (result.length > DEFAULTS.maxOutputLength) {
+                return result.slice(0, DEFAULTS.maxOutputLength) + '… (output truncated)';
+            }
             return result;
         } catch (e) {
             return String(obj);
         }
     }
 
-    function formatLogEntry(type, args, timestamp = Date.now()) {
-        let formattedArgs = args.map(arg => {
-            if (arg === undefined) return 'undefined';
-            if (arg === null) return 'null';
-            if (typeof arg === 'object') return safeStringify(arg);
-            if (typeof arg === 'string') return arg.length > 500 ? arg.slice(0, 500) + '…' : arg;
-            return String(arg);
-        }).join(' ');
+    // Форматируем один аргумент (максимально подробно)
+    function formatArg(arg, maxLen = DEFAULTS.maxStringLength) {
+        if (arg === undefined) return 'undefined';
+        if (arg === null) return 'null';
+        if (typeof arg === 'string') {
+            if (arg.length > maxLen) return arg.slice(0, maxLen) + '… (string truncated)';
+            return arg;
+        }
+        if (typeof arg === 'function') return `[Function: ${arg.name || 'anonymous'}]`;
+        if (typeof arg === 'object') return fullStringify(arg);
+        return String(arg);
+    }
+
+    // Создание записи лога с сохранением всех аргументов и стека
+    function formatLogEntry(type, args) {
+        const timestamp = Date.now();
+        const formattedArgs = args.map(arg => formatArg(arg));
+        // Сохраняем также «сырые» аргументы для возможной обработки
+        let fullMessage = formattedArgs.join(' ');
+        // Если среди аргументов есть Error, добавим стек в отдельное поле
+        let stackTrace = null;
+        for (let arg of args) {
+            if (arg instanceof Error && arg.stack) {
+                stackTrace = arg.stack;
+                break;
+            }
+        }
         return {
             type: type,
             timestamp: timestamp,
             rawArgs: args,
-            message: formattedArgs,
+            message: fullMessage,
+            stack: stackTrace,
             formattedTime: new Date(timestamp).toLocaleTimeString('ru-RU', { hour12: false })
         };
     }
@@ -77,7 +103,6 @@
             this.ui = null;
         }
 
-        // Добавить запись в буфер
         addEntry(type, args) {
             if (this.paused) return;
             const entry = formatLogEntry(type, args);
@@ -85,13 +110,11 @@
             if (this.logBuffer.length > this.options.maxLogs) {
                 this.logBuffer.shift();
             }
-            // Обновить UI, если открыт
             if (this.ui && this.ui.isOpen) {
                 this.ui.renderLogs(this.getFilteredLogs(this.ui.currentFilter, this.ui.searchQuery));
             }
         }
 
-        // Получить логи с фильтрацией
         getFilteredLogs(filterType, searchQuery = '') {
             let filtered = this.logBuffer;
             if (filterType && filterType !== 'all') {
@@ -99,12 +122,14 @@
             }
             if (searchQuery.trim()) {
                 const query = searchQuery.trim().toLowerCase();
-                filtered = filtered.filter(entry => entry.message.toLowerCase().includes(query));
+                filtered = filtered.filter(entry => 
+                    entry.message.toLowerCase().includes(query) ||
+                    (entry.stack && entry.stack.toLowerCase().includes(query))
+                );
             }
             return filtered;
         }
 
-        // Перехват консоли
         startIntercept() {
             if (this.isIntercepting) return;
             const self = this;
@@ -116,14 +141,15 @@
                 self.originalConsole.warn(...args);
                 self.addEntry('warn', args);
                 if (self.options.notifyOnError && global.Lampa && global.Lampa.Noty) {
-                    global.Lampa.Noty.show('⚠️ Предупреждение: ' + args.slice(0, 1).join(' '));
+                    global.Lampa.Noty.show('⚠️ ' + args.slice(0,1).map(a=>String(a)).join(' '));
                 }
             };
             console.error = function(...args) {
                 self.originalConsole.error(...args);
                 self.addEntry('error', args);
                 if (self.options.notifyOnError && global.Lampa && global.Lampa.Noty) {
-                    global.Lampa.Noty.show('❌ Ошибка: ' + args.slice(0, 1).join(' '), null, 3000);
+                    let firstMsg = args.slice(0,1).map(a=>String(a)).join(' ');
+                    global.Lampa.Noty.show('❌ ' + firstMsg, null, 4000);
                 }
             };
             console.info = function(...args) {
@@ -137,7 +163,6 @@
             this.isIntercepting = true;
         }
 
-        // Восстановить оригинальную консоль
         stopIntercept() {
             if (!this.isIntercepting) return;
             console.log = this.originalConsole.log;
@@ -148,33 +173,38 @@
             this.isIntercepting = false;
         }
 
-        // Очистка буфера
         clearLogs() {
             this.logBuffer = [];
             if (this.ui && this.ui.isOpen) this.ui.renderLogs([]);
         }
 
-        // Экспорт логов
-        exportLogs(format = 'txt') {
-            const data = this.logBuffer.map(entry => `[${entry.formattedTime}] ${entry.type.toUpperCase()}: ${entry.message}`).join('\n');
+        exportLogs() {
+            const data = this.logBuffer.map(entry => {
+                let msg = `[${entry.formattedTime}] ${entry.type.toUpperCase()}: ${entry.message}`;
+                if (entry.stack) msg += `\nStack:\n${entry.stack}`;
+                return msg;
+            }).join('\n\n');
             const blob = new Blob([data], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `devlog_${Date.now()}.${format}`;
+            a.download = `devlog_full_${Date.now()}.txt`;
             a.click();
             URL.revokeObjectURL(url);
         }
 
-        // Копировать в буфер обмена отфильтрованные логи
         copyFilteredLogs(filterType, searchQuery) {
             const filtered = this.getFilteredLogs(filterType, searchQuery);
-            const text = filtered.map(entry => `[${entry.formattedTime}] ${entry.type.toUpperCase()}: ${entry.message}`).join('\n');
+            const text = filtered.map(entry => {
+                let msg = `[${entry.formattedTime}] ${entry.type.toUpperCase()}: ${entry.message}`;
+                if (entry.stack) msg += `\n${entry.stack}`;
+                return msg;
+            }).join('\n\n');
             navigator.clipboard.writeText(text).catch(e => console.warn('Copy failed', e));
         }
     }
 
-    // ---------- UI КЛАСС (ПЛАВАЮЩАЯ КНОПКА И МОДАЛЬНОЕ ОКНО) ----------
+    // ---------- UI КЛАСС (без обрезки текста) ----------
     class DevLogUI {
         constructor(logger) {
             this.logger = logger;
@@ -183,7 +213,6 @@
             this.searchQuery = '';
             this.button = null;
             this.modal = null;
-            this.filterButtons = {};
             this.init();
         }
 
@@ -215,7 +244,7 @@
                 }
                 .devlog-btn:hover { transform: scale(1.05); background: #2c3e50; }
                 .devlog-modal {
-                    position: fixed; top: 10%; left: 10%; width: 80%; height: 80%;
+                    position: fixed; top: 5%; left: 5%; width: 90%; height: 90%;
                     background: #1e1e2f; color: #eee;
                     border-radius: 12px; z-index: 10000;
                     display: flex; flex-direction: column;
@@ -244,22 +273,33 @@
                 .devlog-search {
                     padding: 4px 8px; border-radius: 6px; border: none;
                     background: #2a2a3a; color: white;
+                    width: 180px;
                 }
                 .devlog-content {
                     flex: 1; overflow-y: auto; padding: 10px;
                     background: #252530;
+                    white-space: pre-wrap;
+                    word-break: break-word;
                 }
                 .devlog-entry {
                     border-bottom: 1px solid #3a3a4a;
-                    padding: 6px 8px; white-space: pre-wrap;
-                    word-break: break-all;
+                    padding: 8px 6px;
+                    font-family: monospace;
                 }
-                .devlog-entry.log { color: #ccc; }
+                .devlog-entry.log { color: #ddd; }
                 .devlog-entry.warn { color: #ffaa66; }
-                .devlog-entry.error { color: #ff6666; }
-                .devlog-entry.info { color: #66ccff; }
-                .devlog-entry.debug { color: #99ff99; }
-                .devlog-timestamp { color: #888; margin-right: 10px; }
+                .devlog-entry.error { color: #ff9999; }
+                .devlog-entry.info { color: #88ccff; }
+                .devlog-entry.debug { color: #aaffaa; }
+                .devlog-timestamp { color: #888; margin-right: 12px; }
+                .devlog-stack {
+                    margin-top: 6px;
+                    padding-left: 20px;
+                    color: #ccaa88;
+                    font-size: 11px;
+                    white-space: pre-wrap;
+                    border-left: 2px solid #666;
+                }
                 .devlog-close {
                     background: #c33; border: none; color: white;
                     border-radius: 20px; padding: 5px 12px;
@@ -269,11 +309,10 @@
             document.head.appendChild(style);
         }
 
-        createButton() {
+        createButton() { /* как было */ 
             this.button = document.createElement('div');
             this.button.className = 'devlog-btn';
             this.button.textContent = 'LOG';
-            this.button.title = 'DevLog - нажмите для открытия';
             this.button.onclick = () => this.toggleModal();
             document.body.appendChild(this.button);
         }
@@ -284,10 +323,10 @@
             this.modal.style.display = 'none';
             this.modal.innerHTML = `
                 <div class="devlog-header">
-                    <span class="devlog-title">📋 DevLog (${this.logger.logBuffer.length})</span>
+                    <span class="devlog-title">📋 DevLog (0)</span>
                     <div class="devlog-controls">
                         <button id="devlog-clear">🧹 Очистить</button>
-                        <button id="devlog-export">💾 Export TXT</button>
+                        <button id="devlog-export">💾 Export TXT (full)</button>
                         <button id="devlog-copy">📋 Копировать фильтр</button>
                         <button id="devlog-pause">⏸️ Пауза</button>
                         <input type="text" id="devlog-search" class="devlog-search" placeholder="Поиск...">
@@ -305,11 +344,13 @@
                 <div class="devlog-content" id="devlog-content"></div>
             `;
             document.body.appendChild(this.modal);
+            this.attachEvents();
+        }
 
-            // Привязка событий
+        attachEvents() {
             this.modal.querySelector('.devlog-close').onclick = () => this.closeModal();
             this.modal.querySelector('#devlog-clear').onclick = () => { this.logger.clearLogs(); this.updateTitle(); };
-            this.modal.querySelector('#devlog-export').onclick = () => this.logger.exportLogs('txt');
+            this.modal.querySelector('#devlog-export').onclick = () => this.logger.exportLogs();
             this.modal.querySelector('#devlog-copy').onclick = () => this.logger.copyFilteredLogs(this.currentFilter, this.searchQuery);
             const pauseBtn = this.modal.querySelector('#devlog-pause');
             pauseBtn.onclick = () => {
@@ -349,7 +390,11 @@
             logs.forEach(log => {
                 const div = document.createElement('div');
                 div.className = `devlog-entry ${log.type}`;
-                div.innerHTML = `<span class="devlog-timestamp">[${log.formattedTime}]</span> <strong>${log.type.toUpperCase()}</strong>: ${log.message}`;
+                let html = `<span class="devlog-timestamp">[${log.formattedTime}]</span> <strong>${log.type.toUpperCase()}</strong>: ${this.escapeHtml(log.message)}`;
+                if (log.stack) {
+                    html += `<div class="devlog-stack">📌 Stack:<br>${this.escapeHtml(log.stack)}</div>`;
+                }
+                div.innerHTML = html;
                 fragment.appendChild(div);
             });
             container.innerHTML = '';
@@ -358,21 +403,19 @@
             this.updateTitle();
         }
 
-        toggleModal() {
-            this.isOpen ? this.closeModal() : this.openModal();
+        escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
         }
 
-        openModal() {
-            if (!this.modal) return;
-            this.modal.style.display = 'flex';
-            this.isOpen = true;
-            this.renderLogs(this.logger.getFilteredLogs(this.currentFilter, this.searchQuery));
-        }
-
-        closeModal() {
-            if (this.modal) this.modal.style.display = 'none';
-            this.isOpen = false;
-        }
+        toggleModal() { this.isOpen ? this.closeModal() : this.openModal(); }
+        openModal() { this.modal.style.display = 'flex'; this.isOpen = true; this.renderLogs(this.logger.getFilteredLogs(this.currentFilter, this.searchQuery)); }
+        closeModal() { this.modal.style.display = 'none'; this.isOpen = false; }
 
         addLampaMenuItem() {
             if (!global.Lampa || !global.Lampa.Menu) return;
@@ -382,11 +425,11 @@
                     icon: '<svg>...</svg>',
                     action: () => this.toggleModal()
                 }, 'settings');
-            } catch(e) { console.warn('Lampa menu integration failed', e); }
+            } catch(e) { console.warn('Lampa menu failed', e); }
         }
     }
 
-    // ---------- ИНИЦИАЛИЗАЦИЯ ----------
+    // ---------- ЗАПУСК ----------
     let instance = null;
     function init(options = {}) {
         if (instance) return instance;
@@ -395,27 +438,25 @@
         const ui = new DevLogUI(logger);
         logger.ui = ui;
         instance = { logger, ui };
-        // Добавляем глобальный доступ, но без засорения
-        if (!global.DevLog) global.DevLog = {
-            log: (...args) => logger.addEntry('log', args),
-            warn: (...args) => logger.addEntry('warn', args),
-            error: (...args) => logger.addEntry('error', args),
-            info: (...args) => logger.addEntry('info', args),
-            debug: (...args) => logger.addEntry('debug', args),
-            clear: () => logger.clearLogs(),
-            export: (fmt) => logger.exportLogs(fmt),
-            pause: (state) => { logger.paused = state; if(ui && ui.modal) { const btn = ui.modal.querySelector('#devlog-pause'); if(btn) btn.click(); } },
-            isActive: () => logger.isIntercepting,
-            restoreConsole: () => logger.stopIntercept()
-        };
+        if (!global.DevLog) {
+            global.DevLog = {
+                log: (...args) => logger.addEntry('log', args),
+                warn: (...args) => logger.addEntry('warn', args),
+                error: (...args) => logger.addEntry('error', args),
+                info: (...args) => logger.addEntry('info', args),
+                debug: (...args) => logger.addEntry('debug', args),
+                clear: () => logger.clearLogs(),
+                export: () => logger.exportLogs(),
+                pause: (state) => { logger.paused = state; if(ui && ui.modal){ let btn = ui.modal.querySelector('#devlog-pause'); if(btn) btn.click(); } },
+                restoreConsole: () => logger.stopIntercept()
+            };
+        }
         return instance;
     }
 
-    // Автозапуск, если в DOM уже есть
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => init(DEFAULTS));
     } else {
         init(DEFAULTS);
     }
-
 })(window);
