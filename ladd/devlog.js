@@ -11,25 +11,24 @@
     let useRegex = false;
     let hideMeta = false;
     let showMillisec = false;
-    let blacklistPatterns = [];        // массив строк или RegExp
-    let onlyErrorsWarns = false;       // режим "только ошибки и предупреждения"
-    let notifyOnError = false;          // показывать уведомления Lampa при ошибках
-    let currentTheme = 'dark';          // 'dark' или 'light'
+    let blacklistPatterns = [];
+    let onlyErrorsWarns = false;
+    let notifyOnError = false;
+    let currentTheme = 'dark';
 
-    let logBuffer = [];                 // хранит {time, type, text, rawArgs}
+    let logBuffer = [];
     let groupIndent = 0;
-    let timers = new Map();              // для console.time
+    let timers = new Map();
     let originalConsole = window.console;
 
-    // DOM-элементы
-    let logContainer = null;            // div с прокруткой (contenteditable=false, но строки отдельные)
+    let logContainer = null;
     let mainWindow = null;
     let widgetWindow = null;
     let isWidgetVisible = false;
     let isDragging = false;
     let dragOffsetX = 0, dragOffsetY = 0;
 
-    // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+    // ========== БЕЗОПАСНАЯ СЕРИАЛИЗАЦИЯ ==========
     function safeStringify(obj, depth = 0, maxDepth = SERIALIZE_DEPTH, seen = new WeakSet()) {
         if (depth > maxDepth) return '[Max Depth]';
         if (obj === null) return 'null';
@@ -65,10 +64,7 @@
     }
 
     function shouldIgnore(text) {
-        if (onlyErrorsWarns && !['error','warn','assert'].includes(filterType) && !(filterType==='all' && (text.includes('[ERROR]')||text.includes('[WARN]')))) {
-            // при включённом режиме "только ошибки/предупреждения" проверяем глобально
-            if (filterType === 'all' && !text.match(/\[(ERROR|WARN)\]/i)) return true;
-        }
+        if (onlyErrorsWarns && !text.match(/\[(ERROR|WARN)\]/i)) return true;
         for (let pattern of blacklistPatterns) {
             if (pattern instanceof RegExp) {
                 if (pattern.test(text)) return true;
@@ -96,15 +92,12 @@
             text = '  '.repeat(groupIndent) + text;
         }
 
-        // Обработка blacklist
         if (shouldIgnore(text)) return;
 
-        // Уведомления об ошибках
         if (notifyOnError && (type === 'error' || type === 'assert') && window.Lampa && Lampa.Noty) {
             Lampa.Noty.show(text.slice(0,100), 3000);
         }
 
-        // Сохраняем rawArgs для инспектора
         let rawArgsCopy = Array.from(args).map(arg => {
             try { return JSON.parse(JSON.stringify(arg)); }
             catch(e) { return String(arg); }
@@ -114,12 +107,10 @@
         if (logBuffer.length > MAX_LOGS) logBuffer.shift();
         saveToLocalStorage();
         updateFabCounter();
-        if (!pauseUpdate) {
-            refreshLogDisplay();
-        }
+        if (!pauseUpdate) refreshLogDisplay();
     }
 
-    // ========== ПЕРЕХВАТ КОНСОЛИ (включая time) ==========
+    // ========== ПЕРЕХВАТ КОНСОЛИ ==========
     function initConsoleInterceptor() {
         if (window.console !== originalConsole) return;
         const handler = {
@@ -188,7 +179,7 @@
         window.console = new Proxy(originalConsole, handler);
     }
 
-    // ========== ЛОКАЛЬНОЕ ХРАНЕНИЕ ==========
+    // ========== LOCALSTORAGE ==========
     function saveToLocalStorage() {
         try {
             const toStore = logBuffer.map(entry => ({
@@ -213,10 +204,9 @@
         } catch(e) {}
     }
 
-    // ========== ОТОБРАЖЕНИЕ ЛОГОВ (цветной контейнер) ==========
+    // ========== ОТОБРАЖЕНИЕ ЛОГОВ ==========
     function refreshLogDisplay() {
         if (!logContainer) return;
-        // Фильтруем
         let filtered = [...logBuffer];
         if (filterType !== 'all') {
             filtered = filtered.filter(entry => entry.type === filterType);
@@ -232,13 +222,11 @@
                 filtered = filtered.filter(entry => entry.text.toLowerCase().includes(lower));
             }
         }
-        // Очищаем контейнер
         logContainer.innerHTML = '';
         const fragment = document.createDocumentFragment();
         for (let entry of filtered) {
             const lineDiv = document.createElement('div');
             lineDiv.className = `devlog-line devlog-${entry.type}`;
-            // Стиль цвета в зависимости от темы и типа
             let color = '';
             switch(entry.type) {
                 case 'error': color = '#ff6b6b'; break;
@@ -258,10 +246,8 @@
             lineDiv.style.fontSize = '12px';
             lineDiv.style.whiteSpace = 'pre-wrap';
             lineDiv.style.wordBreak = 'break-all';
-            // Контент
             let displayText = hideMeta ? entry.text : `[${entry.time}] [${entry.type.toUpperCase()}] ${entry.text}`;
             lineDiv.textContent = displayText;
-            // Добавляем инспектор по клику
             if (entry.rawArgs && entry.rawArgs.some(arg => typeof arg === 'object')) {
                 lineDiv.style.cursor = 'pointer';
                 lineDiv.title = 'Клик для просмотра объекта';
@@ -271,8 +257,6 @@
         }
         logContainer.appendChild(fragment);
         logContainer.scrollTop = logContainer.scrollHeight;
-
-        // Обновляем счётчик отфильтрованных
         const infoSpan = document.getElementById('devlog-filter-info');
         if (infoSpan) infoSpan.textContent = `${filtered.length} / ${logBuffer.length}`;
     }
@@ -334,7 +318,6 @@
         widget.appendChild(contentDiv);
         document.body.appendChild(widget);
         widgetWindow = widget;
-        // Добавляем drag
         titleBar.addEventListener('mousedown', (e) => {
             if (e.target === closeWidget) return;
             isDragging = true;
@@ -358,7 +341,6 @@
             widget.style.bottom = 'auto';
         }
         isWidgetVisible = true;
-        // Обновляем содержимое виджета (последние 20 строк)
         function updateWidgetContent() {
             if (!widgetWindow) return;
             let lastLines = logBuffer.slice(-20).map(entry => hideMeta ? entry.text : `[${entry.time}] ${entry.text}`).join('\n');
@@ -368,7 +350,7 @@
         updateWidgetContent();
     }
 
-    // ========== ГЛАВНОЕ ОКНО (полноценное) ==========
+    // ========== ГЛАВНОЕ ОКНО ==========
     function openDevLog() {
         if (mainWindow) mainWindow.remove();
         mainWindow = document.createElement('div');
@@ -377,7 +359,6 @@
             position:fixed; top:0; left:0; width:100%; height:100%; background:${currentTheme==='dark' ? '#1a1a1a' : '#ffffff'};
             z-index:20000; display:flex; flex-direction:column; font-family:sans-serif;
         `;
-        // Заголовок
         const header = document.createElement('div');
         header.style.cssText = `display:flex; justify-content:space-between; align-items:center; padding:10px 15px; background:#2c3e50; color:#fff; font-weight:bold;`;
         header.innerHTML = '📋 Dev Log Extended';
@@ -388,10 +369,8 @@
         header.appendChild(closeBtn);
         mainWindow.appendChild(header);
 
-        // Панель 1
         const toolbar = document.createElement('div');
         toolbar.style.cssText = `display:flex; flex-wrap:wrap; gap:8px; padding:8px 12px; background:${currentTheme==='dark' ? '#222' : '#e0e0e0'}; border-bottom:1px solid #444;`;
-        // Фильтр по типу
         const select = document.createElement('select');
         select.style.cssText = 'background:#333; color:#fff; border:1px solid #555; padding:4px; border-radius:4px;';
         select.innerHTML = `<option value="all">All</option><option value="log">Log</option><option value="error">Error</option><option value="warn">Warn</option><option value="info">Info</option><option value="debug">Debug</option><option value="trace">Trace</option><option value="table">Table</option><option value="time">Time</option>`;
@@ -399,14 +378,13 @@
         select.onchange = () => { filterType = select.value; refreshLogDisplay(); };
         toolbar.appendChild(select);
 
-        // Поиск
         const searchInput = document.createElement('input');
         searchInput.placeholder = 'Поиск...';
         searchInput.style.cssText = 'background:#333; color:#fff; border:1px solid #555; padding:4px; border-radius:4px; width:150px;';
         searchInput.value = filterText;
         searchInput.oninput = () => { filterText = searchInput.value; refreshLogDisplay(); };
         toolbar.appendChild(searchInput);
-        // Регулярка
+
         const regexLabel = document.createElement('label');
         regexLabel.style.cssText = 'display:flex; align-items:center; gap:4px; color:#fff;';
         const regexChk = document.createElement('input');
@@ -416,7 +394,7 @@
         regexLabel.appendChild(regexChk);
         regexLabel.appendChild(document.createTextNode('RegEx'));
         toolbar.appendChild(regexLabel);
-        // Скрыть метаданные
+
         const hideLabel = document.createElement('label');
         hideLabel.style.cssText = 'display:flex; align-items:center; gap:4px; color:#fff;';
         const hideChk = document.createElement('input');
@@ -426,7 +404,7 @@
         hideLabel.appendChild(hideChk);
         hideLabel.appendChild(document.createTextNode('Скрыть время/тип'));
         toolbar.appendChild(hideLabel);
-        // Миллисекунды
+
         const msLabel = document.createElement('label');
         msLabel.style.cssText = 'display:flex; align-items:center; gap:4px; color:#fff;';
         const msChk = document.createElement('input');
@@ -436,19 +414,19 @@
         msLabel.appendChild(msChk);
         msLabel.appendChild(document.createTextNode('мс'));
         toolbar.appendChild(msLabel);
-        // Кнопка паузы
+
         const pauseBtn = document.createElement('button');
         pauseBtn.textContent = pauseUpdate ? '▶ Пуск' : '⏸ Пауза';
         pauseBtn.style.cssText = 'background:#333; color:#fff; border:none; padding:4px 12px; border-radius:4px; cursor:pointer;';
         pauseBtn.onclick = () => { pauseUpdate = !pauseUpdate; pauseBtn.textContent = pauseUpdate ? '▶ Пуск' : '⏸ Пауза'; if(!pauseUpdate) refreshLogDisplay(); };
         toolbar.appendChild(pauseBtn);
-        // Только ошибки/предупреждения
+
         const onlyErrorsBtn = document.createElement('button');
         onlyErrorsBtn.textContent = onlyErrorsWarns ? '⚠️ Все логи' : '⚠️ Errors/Warns';
         onlyErrorsBtn.style.cssText = 'background:#e67e22; color:#fff; border:none; padding:4px 12px; border-radius:4px; cursor:pointer;';
         onlyErrorsBtn.onclick = () => { onlyErrorsWarns = !onlyErrorsWarns; onlyErrorsBtn.textContent = onlyErrorsWarns ? '⚠️ Все логи' : '⚠️ Errors/Warns'; refreshLogDisplay(); };
         toolbar.appendChild(onlyErrorsBtn);
-        // Виджет
+
         const widgetBtn = document.createElement('button');
         widgetBtn.textContent = isWidgetVisible ? '🪟 Скрыть виджет' : '🪟 Показать виджет';
         widgetBtn.style.cssText = 'background:#333; color:#fff; border:none; padding:4px 12px; border-radius:4px; cursor:pointer;';
@@ -457,7 +435,7 @@
             else { createWidget(); widgetBtn.textContent = '🪟 Скрыть виджет'; }
         };
         toolbar.appendChild(widgetBtn);
-        // Тема
+
         const themeBtn = document.createElement('button');
         themeBtn.textContent = currentTheme === 'dark' ? '🌞 Светлая' : '🌙 Тёмная';
         themeBtn.style.cssText = 'background:#333; color:#fff; border:none; padding:4px 12px; border-radius:4px; cursor:pointer;';
@@ -466,22 +444,19 @@
             themeBtn.textContent = currentTheme === 'dark' ? '🌞 Светлая' : '🌙 Тёмная';
             mainWindow.style.background = currentTheme === 'dark' ? '#1a1a1a' : '#ffffff';
             toolbar.style.background = currentTheme === 'dark' ? '#222' : '#e0e0e0';
-            logContainer.style.background = currentTheme === 'dark' ? '#000' : '#fff';
+            if(logContainer) logContainer.style.background = currentTheme === 'dark' ? '#000' : '#fff';
             refreshLogDisplay();
         };
         toolbar.appendChild(themeBtn);
 
-        // Инфо счетчик
         const infoSpan = document.createElement('span');
         infoSpan.id = 'devlog-filter-info';
         infoSpan.style.cssText = 'margin-left:auto; background:#333; padding:2px 8px; border-radius:12px; color:#fff;';
         toolbar.appendChild(infoSpan);
         mainWindow.appendChild(toolbar);
 
-        // Панель 2 - дополнительные настройки
         const toolbar2 = document.createElement('div');
         toolbar2.style.cssText = `display:flex; flex-wrap:wrap; gap:8px; padding:8px 12px; background:${currentTheme==='dark' ? '#2a2a2a' : '#d0d0d0'};`;
-        // Чёрный список
         const blacklistInput = document.createElement('input');
         blacklistInput.placeholder = 'Чёрный список (слова через запятую)';
         blacklistInput.style.cssText = 'background:#333; color:#fff; border:1px solid #555; padding:4px; border-radius:4px; flex:1;';
@@ -497,7 +472,6 @@
             refreshLogDisplay();
         };
         toolbar2.appendChild(blacklistInput);
-        // Уведомления об ошибках
         const notifyLabel = document.createElement('label');
         notifyLabel.style.cssText = 'display:flex; align-items:center; gap:4px; color:#fff;';
         const notifyChk = document.createElement('input');
@@ -509,17 +483,14 @@
         toolbar2.appendChild(notifyLabel);
         mainWindow.appendChild(toolbar2);
 
-        // Контейнер для логов
         logContainer = document.createElement('div');
         logContainer.style.cssText = `flex:1; overflow:auto; background:${currentTheme==='dark' ? '#000' : '#fff'}; padding:5px; font-family:monospace;`;
         mainWindow.appendChild(logContainer);
 
-        // Footer с кнопками экспорта
         const footer = document.createElement('div');
         footer.style.cssText = `display:flex; gap:8px; padding:8px; background:${currentTheme==='dark' ? '#111' : '#e0e0e0'}; justify-content:flex-end;`;
         const copyBtn = document.createElement('button');
         copyBtn.textContent = '📋 Копировать (видимые)';
-        copyBtn.style.cssText = 'background:#333; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer;';
         copyBtn.onclick = () => {
             const visibleText = Array.from(logContainer.children).map(div => div.textContent).join('\n');
             if (navigator.clipboard) navigator.clipboard.writeText(visibleText).then(()=>showNoty('Скопировано!')).catch(()=>fallbackCopy(visibleText));
@@ -548,7 +519,6 @@
         refreshLogDisplay();
         addLog('log', ['DevLog Extended открыт']);
 
-        // Горячие клавиши для окна
         mainWindow.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key === 'f') { e.preventDefault(); searchInput.focus(); }
             if (e.key === 'Escape') mainWindow.remove();
@@ -624,19 +594,31 @@
         document.head.appendChild(style);
     }
 
+    // ========== ИНИЦИАЛИЗАЦИЯ ==========
     function init() {
         initConsoleInterceptor();
-        createFab();
+        createFab();  // сразу создаём кнопку, без ожидания Lampa
         loadFromLocalStorage();
-        try { Lampa.Menu.add('plugins', { title: 'Dev Log Extended', icon: 'log', action: openDevLog }); } catch(e) {}
+        // Добавляем пункт в меню Lampa, когда она появится
+        if (window.Lampa && Lampa.Menu) {
+            try { Lampa.Menu.add('plugins', { title: 'Dev Log Extended', icon: 'log', action: openDevLog }); } catch(e) {}
+        } else {
+            const checkLampa = setInterval(() => {
+                if (window.Lampa && Lampa.Menu) {
+                    clearInterval(checkLampa);
+                    try { Lampa.Menu.add('plugins', { title: 'Dev Log Extended', icon: 'log', action: openDevLog }); } catch(e) {}
+                }
+            }, 200);
+        }
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.shiftKey && e.code === 'KeyL') { e.preventDefault(); openDevLog(); }
         });
     }
 
-    function waitForLampa(cb) {
-        if (window.Lampa && Lampa.Component) cb();
-        else setInterval(() => { if(window.Lampa && Lampa.Component){ clearInterval(this); cb(); } }, 200);
+    // Запускаем после загрузки DOM
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
     }
-    waitForLampa(init);
 })();
