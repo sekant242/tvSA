@@ -1,30 +1,24 @@
 (function() {
-    // Проверяем, что Lampa загружена
     if (typeof Lampa === 'undefined') {
         console.error('[EmptyPage] Lampa не найдена');
         return;
     }
 
-    // Уникальное имя компонента, чтобы избежать конфликтов
     const COMPONENT_NAME = 'empty-page';
     let initialized = false;
 
-    // Регистрируем компонент пустой страницы
+    // Регистрируем компонент как объект с методом render
     function registerEmptyPageComponent() {
-        if (Lampa.Component && Lampa.Component.registered && Lampa.Component.registered[COMPONENT_NAME]) {
-            return; // уже зарегистрирован
+        // Проверяем, не зарегистрирован ли уже
+        if (Lampa.Component.registered && Lampa.Component.registered[COMPONENT_NAME]) {
+            return;
         }
 
-        Lampa.Component.add(COMPONENT_NAME, class EmptyPage extends Lampa.Component.Base {
-            constructor(props) {
-                super(props);
-                this.name = COMPONENT_NAME;
-                this.title = 'Пустая страница';
-            }
-
-            render() {
-                // Создаём контейнер с минимальной стилизацией
-                this.view = $('<div>', {
+        // Добавляем компонент без наследования от Base
+        Lampa.Component.add(COMPONENT_NAME, {
+            render: function(props) {
+                // Создаём контейнер (используем jQuery, который всегда есть в Lampa)
+                var container = $('<div>', {
                     class: 'empty-page-container',
                     css: {
                         display: 'flex',
@@ -37,52 +31,50 @@
                     }
                 }).html(`
                     <div style="text-align: center;">
-                        <i class="icon">📄</i>
+                        <i class="icon" style="font-size: 48px;">📄</i>
                         <h2 style="margin-top: 20px;">Пустая страница</h2>
                         <p style="opacity: 0.7;">Здесь пока ничего нет</p>
                     </div>
                 `);
-
-                return this.view;
+                return container;
             }
         });
     }
 
     // Добавляем кнопку в боковое меню
     function addMenuButton() {
-        // Используем Lampa.Menu.add, если доступно, иначе Lampa.Menu.menu
-        if (typeof Lampa.Menu !== 'undefined' && typeof Lampa.Menu.add === 'function') {
+        // Основной способ
+        if (Lampa.Menu && typeof Lampa.Menu.add === 'function') {
             Lampa.Menu.add({
                 title: 'Пустая',
-                icon: 'web', // любая иконка из стандартного набора Lampa / Material Icons
-                component: COMPONENT_NAME,
-                activity: {
-                    component: COMPONENT_NAME
-                }
+                icon: 'web',
+                component: COMPONENT_NAME
             });
-        } else {
-            // Альтернативный способ для старых версий
+        } 
+        // Fallback для старых версий
+        else if (Lampa.Menu) {
             Lampa.Menu.menu = Lampa.Menu.menu || [];
             Lampa.Menu.menu.push({
                 title: 'Пустая',
                 icon: 'web',
-                component: COMPONENT_NAME,
-                activity: {
-                    component: COMPONENT_NAME
-                }
+                component: COMPONENT_NAME
             });
-            // Принудительно обновляем меню
-            if (Lampa.Menu.update) Lampa.Menu.update();
+            if (typeof Lampa.Menu.update === 'function') Lampa.Menu.update();
+        } else {
+            console.warn('[EmptyPage] Lampa.Menu не доступен');
         }
     }
 
-    // Инициализация после готовности Lampa
+    // Дожидаемся полной готовности приложения с небольшой задержкой
     Lampa.Listener.follow('app', function(e) {
         if (e.type === 'ready' && !initialized) {
             initialized = true;
-            registerEmptyPageComponent();
-            addMenuButton();
-            console.log('[EmptyPage] Плагин активирован, кнопка добавлена в меню');
+            // Небольшая задержка, чтобы все внутренние модули Lampa точно подгрузились
+            setTimeout(function() {
+                registerEmptyPageComponent();
+                addMenuButton();
+                console.log('[EmptyPage] Кнопка добавлена в меню');
+            }, 100);
         }
     });
 })();
