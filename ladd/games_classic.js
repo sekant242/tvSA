@@ -3,78 +3,95 @@
     window.plugin_games_ready = true;
 
     function init() {
-        // ---- 1. Компонент списка игр ----
-        Lampa.Component.add('games_list', {
-            template: `
-                <div class="games-container" style="padding:20px;color:#fff;">
-                    <h1 style="font-size:28px;margin-bottom:20px;">🎮 Игры</h1>
-                    <div class="games-grid" style="display:flex;flex-wrap:wrap;gap:15px;">
-                        {{#each games}}
-                        <div class="game-card" data-url="{{this.url}}" style="
-                            background:rgba(255,255,255,0.05);
-                            border-radius:12px;
-                            padding:15px 20px;
-                            width:calc(50% - 15px);
-                            box-sizing:border-box;
-                            cursor:pointer;
-                            transition:all 0.2s;
-                            border:1px solid rgba(255,255,255,0.08);
-                        ">
-                            <div style="display:flex;align-items:center;gap:12px;">
-                                <span style="font-size:28px;">{{this.icon}}</span>
-                                <div>
-                                    <div style="font-size:18px;font-weight:600;">{{this.title}}</div>
-                                    <div style="font-size:14px;color:rgba(255,255,255,0.6);margin-top:4px;">{{this.description}}</div>
+        try {
+            // ---- 1. Компонент списка игр ----
+            Lampa.Component.add('games_list', {
+                template: `
+                    <div class="games-container" style="padding:20px;color:#fff;">
+                        <h1 style="font-size:28px;margin-bottom:20px;">🎮 Игры</h1>
+                        <div class="games-grid" style="display:flex;flex-wrap:wrap;gap:15px;">
+                            {{#each games}}
+                            <div class="game-card" data-url="{{this.url}}" style="
+                                background:rgba(255,255,255,0.05);
+                                border-radius:12px;
+                                padding:15px 20px;
+                                width:calc(50% - 15px);
+                                box-sizing:border-box;
+                                cursor:pointer;
+                                transition:all 0.2s;
+                                border:1px solid rgba(255,255,255,0.08);
+                            ">
+                                <div style="display:flex;align-items:center;gap:12px;">
+                                    <span style="font-size:28px;">{{this.icon}}</span>
+                                    <div>
+                                        <div style="font-size:18px;font-weight:600;">{{this.title}}</div>
+                                        <div style="font-size:14px;color:rgba(255,255,255,0.6);margin-top:4px;">{{this.description}}</div>
+                                    </div>
                                 </div>
                             </div>
+                            {{/each}}
                         </div>
-                        {{/each}}
-                    </div>
-                </div>
-            `,
-            data: function() {
-                return { games: getGames() };
-            },
-            mounted: function() {
-                setTimeout(function() {
-                    document.querySelectorAll('.game-card').forEach(function(el) {
-                        el.addEventListener('click', function() {
-                            var url = this.dataset.url;
-                            if (url) openGame(url);
-                        });
-                    });
-                }, 100);
-            }
-        });
-
-        // ---- 2. Компонент для открытия игры (если нет встроенного браузера) ----
-        if (!Lampa.Component.get('browser')) {
-            Lampa.Component.add('game_player', {
-                template: `
-                    <div style="width:100%;height:100%;background:#000;position:relative;">
-                        <iframe src="{{url}}" style="width:100%;height:100%;border:none;" allowfullscreen allow="autoplay; fullscreen"></iframe>
-                        <div style="position:absolute;top:10px;right:20px;cursor:pointer;color:#fff;font-size:24px;z-index:100;" onclick="Lampa.Activity.back()">✕</div>
                     </div>
                 `,
                 data: function() {
-                    return { url: this.params.url || '' };
+                    return { games: getGames() };
+                },
+                mounted: function() {
+                    var self = this;
+                    setTimeout(function() {
+                        document.querySelectorAll('.game-card').forEach(function(el) {
+                            el.addEventListener('click', function() {
+                                var url = this.dataset.url;
+                                if (url) openGame(url);
+                            });
+                        });
+                    }, 100);
                 }
             });
-        }
 
-        // ---- 3. Добавление пункта в боковое меню ----
-        Lampa.Menu.add({
-            title: 'Игры',
-            icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" width="24" height="24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>',
-            action: function() {
-                Lampa.Activity.push({
-                    component: 'games_list',
-                    title: 'Игры'
+            // ---- 2. Компонент для открытия игры (если нет встроенного браузера) ----
+            if (!Lampa.Component.get('browser')) {
+                Lampa.Component.add('game_player', {
+                    template: `
+                        <div style="width:100%;height:100%;background:#000;position:relative;">
+                            <iframe src="{{url}}" style="width:100%;height:100%;border:none;" allowfullscreen allow="autoplay; fullscreen"></iframe>
+                            <div style="position:absolute;top:10px;right:20px;cursor:pointer;color:#fff;font-size:24px;z-index:100;" onclick="Lampa.Activity.back()">✕</div>
+                        </div>
+                    `,
+                    data: function() {
+                        return { url: this.params.url || '' };
+                    }
                 });
             }
-        });
 
-        console.log('✅ Плагин "Игры" загружен');
+            // ---- 3. Добавление пункта в боковое меню (через addButton) ----
+            if (typeof Lampa.Menu.addButton === 'function') {
+                Lampa.Menu.addButton({
+                    title: 'Игры',
+                    icon: '🕹️',  // простая emoji иконка
+                    activity: 'games_list',
+                    component: 'games_list'
+                });
+            } else {
+                // fallback для старых версий
+                Lampa.Menu.add({
+                    title: 'Игры',
+                    icon: '🕹️',
+                    action: function() {
+                        Lampa.Activity.push({
+                            component: 'games_list',
+                            title: 'Игры'
+                        });
+                    }
+                });
+            }
+
+            console.log('✅ Плагин "Игры" успешно загружен');
+
+        } catch (e) {
+            console.error('❌ Ошибка при загрузке плагина "Игры":', e);
+            Lampa.Noty.show('Ошибка плагина "Игры": ' + e.message);
+        }
     }
 
     // ---- 4. Список игр (50 шт.) ----
@@ -150,7 +167,7 @@
         }
     }
 
-    // ---- 6. Запуск плагина ----
+    // ---- 6. Запуск плагина после готовности приложения ----
     if (window.appready) {
         init();
     } else {
