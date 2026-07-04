@@ -10,7 +10,7 @@
   if (!window.Lampa) {
     console.error('Lampa Games: Lampa not found!');
     return;
-  }
+  } 
 
   var Lampa = window.Lampa;
 
