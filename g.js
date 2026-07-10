@@ -1,4 +1,4 @@
-// g.js - Плагин для Lampa с 20 играми
+// lag/g.js - Плагин для Lampa с 20 играми (исправленная версия)
 (function() {
     'use strict';
 
@@ -8,14 +8,11 @@
         return;
     }
 
-    // Имя плагина
     const PLUGIN_NAME = 'lag';
     const PLUGIN_TITLE = 'Lampa Games';
-
-    // Хранилище рекордов
     const RECORDS_KEY = 'lag_records';
 
-    // Получение рекорда
+    // ======== Хранилище рекордов ========
     function getRecord(gameId) {
         try {
             const data = JSON.parse(localStorage.getItem(RECORDS_KEY) || '{}');
@@ -23,14 +20,13 @@
         } catch { return 0; }
     }
 
-    // Сохранение рекорда
     function setRecord(gameId, score) {
         try {
             const data = JSON.parse(localStorage.getItem(RECORDS_KEY) || '{}');
             if (score > (data[gameId] || 0)) {
                 data[gameId] = score;
                 localStorage.setItem(RECORDS_KEY, JSON.stringify(data));
-                return true; // рекорд обновлён
+                return true;
             }
             return false;
         } catch { return false; }
@@ -52,7 +48,6 @@
             }
         }
 
-        // Воспроизвести короткий тон
         beep(freq = 440, duration = 100, type = 'square', volume = 0.3) {
             this.init();
             if (!this.ctx) return;
@@ -70,7 +65,6 @@
             } catch (e) {}
         }
 
-        // Звук для разных событий
         click() { this.beep(800, 80, 'sine', 0.2); }
         move() { this.beep(600, 50, 'sine', 0.15); }
         win() { this.beep(1000, 200, 'sine', 0.3); setTimeout(() => this.beep(1200, 200, 'sine', 0.3), 150); }
@@ -80,47 +74,100 @@
 
     const sound = new SoundGenerator();
 
-    // ======== Получение изображений ========
+    // ======== Получение случайного изображения ========
     function getRandomImage(callback) {
-        // Получаем случайное изображение из истории, избранных или главной
-        // Для упрощения используем фейковые URL (можно заменить на реальные из Lampa API)
-        // В Lampa есть Lampa.History, Lampa.Favorites, Lampa.Storage
-        // Но здесь мы просто вернём случайную картинку-заглушку
-        // В реальном плагине нужно использовать API Lampa для получения изображений
-        
-        // Пример: пытаемся получить из истории
         let sources = [];
         try {
-            if (Lampa.History && Lampa.History.list) {
-                sources = sources.concat(Lampa.History.list().slice(0, 5));
+            if (Lampa.History && typeof Lampa.History.list === 'function') {
+                const hist = Lampa.History.list();
+                if (Array.isArray(hist)) sources = sources.concat(hist.slice(0, 5));
             }
         } catch (e) {}
         if (sources.length === 0) {
             try {
-                if (Lampa.Favorites && Lampa.Favorites.list) {
-                    sources = sources.concat(Lampa.Favorites.list().slice(0, 5));
+                if (Lampa.Favorites && typeof Lampa.Favorites.list === 'function') {
+                    const fav = Lampa.Favorites.list();
+                    if (Array.isArray(fav)) sources = sources.concat(fav.slice(0, 5));
                 }
             } catch (e) {}
         }
         if (sources.length === 0) {
-            // Если ничего нет - берём из главной (можно использовать Lampa.Storage или просто фиктивное)
-            // Для демонстрации используем заглушку
+            // Заглушка
             sources = [
                 'https://via.placeholder.com/400x600/FF0000/FFFFFF?text=Image1',
                 'https://via.placeholder.com/400x600/00FF00/FFFFFF?text=Image2',
                 'https://via.placeholder.com/400x600/0000FF/FFFFFF?text=Image3',
             ];
         }
-        // Берём случайное
-        const img = sources[Math.floor(Math.random() * sources.length)];
-        // Если это объект фильма, извлекаем постер
-        let url = img;
-        if (typeof img === 'object' && img.poster) {
-            url = img.poster;
-        } else if (typeof img === 'object' && img.image) {
-            url = img.image;
-        }
+        let item = sources[Math.floor(Math.random() * sources.length)];
+        let url = item;
+        if (typeof item === 'object' && item.poster) url = item.poster;
+        else if (typeof item === 'object' && item.image) url = item.image;
         callback(url);
+    }
+
+    // ======== Класс управления вводом ========
+    class GameInput {
+        constructor(container, handlers) {
+            this.handlers = handlers;
+            this.container = container;
+            this.boundKeyDown = this.onKeyDown.bind(this);
+            this.boundClick = this.onClick.bind(this);
+            this.boundTouch = this.onTouch.bind(this);
+            this.bindEvents();
+        }
+
+        bindEvents() {
+            document.addEventListener('keydown', this.boundKeyDown);
+            this.container.addEventListener('click', this.boundClick);
+            this.container.addEventListener('touchstart', this.boundTouch);
+            if (Lampa.Listener) {
+                Lampa.Listener.add(this.container, 'key', this.boundKeyDown);
+            }
+        }
+
+        onKeyDown(e) {
+            const key = e.key;
+            let action = null;
+            switch(key) {
+                case 'ArrowUp': action = 'up'; break;
+                case 'ArrowDown': action = 'down'; break;
+                case 'ArrowLeft': action = 'left'; break;
+                case 'ArrowRight': action = 'right'; break;
+                case 'Enter': action = 'enter'; break;
+                case 'Backspace': case 'Escape': action = 'back'; break;
+                default: return;
+            }
+            e.preventDefault();
+            if (this.handlers[action]) this.handlers[action]();
+            sound.move();
+        }
+
+        onClick(e) {
+            const rect = this.container.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            if (this.handlers.tap) this.handlers.tap(x, y);
+        }
+
+        onTouch(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            if (!touch) return;
+            const rect = this.container.getBoundingClientRect();
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            if (this.handlers.tap) this.handlers.tap(x, y);
+        }
+
+        destroy() {
+            document.removeEventListener('keydown', this.boundKeyDown);
+            this.container.removeEventListener('click', this.boundClick);
+            this.container.removeEventListener('touchstart', this.boundTouch);
+            if (Lampa.Listener) {
+                Lampa.Listener.remove(this.container, 'key', this.boundKeyDown);
+            }
+        }
     }
 
     // ======== Главное меню игр ========
@@ -147,101 +194,60 @@
         { id: 'puzzle', title: 'Пазл' }
     ];
 
-    // Функция запуска игры
+    // Фабрики игр (заполняются ниже)
+    const gameFactories = {};
+
+    // ======== Запуск игры с управлением жизненным циклом ========
     function launchGame(gameId) {
         sound.click();
-        // Очищаем экран и запускаем соответствующую игру
-        const content = Lampa.Activity.active().content;
-        if (content) {
-            // Очищаем контент, добавляем игровой контейнер
+        try {
+            const activity = Lampa.Activity.active();
+            if (!activity) {
+                console.error('Нет активной активности');
+                return;
+            }
+            const content = activity.content;
+            if (!content) {
+                console.error('Нет контента');
+                return;
+            }
+
+            // Останавливаем предыдущую игру, если есть
+            if (content._gameStop) {
+                content._gameStop();
+                delete content._gameStop;
+            }
+
+            // Очищаем контент
             content.innerHTML = '';
             const container = document.createElement('div');
             container.id = 'game-container';
             container.style.cssText = 'width:100%;height:100%;position:relative;overflow:hidden;background:#111;color:#fff;';
             content.appendChild(container);
+
             // Запускаем игру
             const gameFn = gameFactories[gameId];
             if (gameFn) {
                 gameFn(container);
             } else {
                 container.innerHTML = '<div style="text-align:center;padding:50px;font-size:24px;">Игра не реализована</div>';
+                // Пустая остановка
+                container._gameStop = function() {};
+            }
+        } catch (e) {
+            console.error('Ошибка запуска игры:', e);
+            // Показываем сообщение об ошибке
+            const activity = Lampa.Activity.active();
+            if (activity && activity.content) {
+                activity.content.innerHTML = `<div style="color:red;padding:50px;text-align:center;font-size:20px;">Ошибка загрузки игры: ${e.message}</div>`;
             }
         }
     }
 
     // ======== Фабрики игр ========
-    const gameFactories = {};
-
-    // Вспомогательный класс для управления вводом (клавиатура, пульт, сенсор)
-    class GameInput {
-        constructor(container, handlers) {
-            this.handlers = handlers;
-            this.container = container;
-            this.bindEvents();
-        }
-
-        bindEvents() {
-            // Клавиатура
-            document.addEventListener('keydown', this.onKeyDown.bind(this));
-            // Сенсор (клики по контейнеру)
-            this.container.addEventListener('click', this.onClick.bind(this));
-            this.container.addEventListener('touchstart', this.onTouch.bind(this));
-            // Пульт Lampa (обычно эмулирует клавиши или имеет свои события)
-            // Можно добавить обработку событий пульта через Lampa.Listener
-            if (Lampa.Listener) {
-                Lampa.Listener.add(this.container, 'key', this.onKeyDown.bind(this));
-            }
-        }
-
-        onKeyDown(e) {
-            const key = e.key;
-            let action = null;
-            switch(key) {
-                case 'ArrowUp': action = 'up'; break;
-                case 'ArrowDown': action = 'down'; break;
-                case 'ArrowLeft': action = 'left'; break;
-                case 'ArrowRight': action = 'right'; break;
-                case 'Enter': action = 'enter'; break;
-                case 'Backspace': case 'Escape': action = 'back'; break;
-                default: return;
-            }
-            e.preventDefault();
-            if (this.handlers[action]) this.handlers[action]();
-            sound.move();
-        }
-
-        onClick(e) {
-            // Определяем область клика относительно контейнера для упрощения
-            const rect = this.container.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            if (this.handlers.tap) this.handlers.tap(x, y);
-        }
-
-        onTouch(e) {
-            e.preventDefault();
-            const touch = e.touches[0];
-            const rect = this.container.getBoundingClientRect();
-            const x = touch.clientX - rect.left;
-            const y = touch.clientY - rect.top;
-            if (this.handlers.tap) this.handlers.tap(x, y);
-        }
-
-        destroy() {
-            document.removeEventListener('keydown', this.onKeyDown);
-            this.container.removeEventListener('click', this.onClick);
-            this.container.removeEventListener('touchstart', this.onTouch);
-            if (Lampa.Listener) {
-                Lampa.Listener.remove(this.container, 'key', this.onKeyDown);
-            }
-        }
-    }
-
-    // ======== Реализации игр (минимальные, но играбельные) ========
 
     // 1. Тетрис
     gameFactories.tetris = function(container) {
-        // Простейший тетрис
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Тетрис (упрощённый)</div>';
         const canvas = document.createElement('canvas');
         canvas.width = 300;
@@ -274,7 +280,6 @@
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // board
             for (let r=0; r<ROWS; r++) {
                 for (let c=0; c<COLS; c++) {
                     if (board[r][c]) {
@@ -324,7 +329,6 @@
                     }
                 }
             }
-            // clear lines
             let cleared = 0;
             for (let r=ROWS-1; r>=0; ) {
                 let full = board[r].every(cell => cell!==0);
@@ -376,21 +380,21 @@
             draw();
         }
 
-        // Управление
         const input = new GameInput(container, {
             left: () => move(-1,0),
             right: () => move(1,0),
             down: () => move(0,1),
             up: () => rotate(),
             enter: () => { if (gameOver) { board = Array(ROWS).fill().map(()=>Array(COLS).fill(0)); score=0; gameOver=false; start(); } },
-            tap: (x,y) => { /* Можно поворот или падение */ rotate(); }
+            tap: () => rotate()
         });
 
         start();
-        // при разрушении очищаем интервал
-        // В Lampa нет простого способа, но сохраним ссылку
-        container._tetrisInterval = interval;
-        container._input = input;
+
+        container._gameStop = function() {
+            if (interval) clearInterval(interval);
+            input.destroy();
+        };
     };
 
     // 2. Змейка
@@ -430,7 +434,6 @@
         function step() {
             if (gameOver) return;
             const head = {x: snake[0].x + dir.x, y: snake[0].y + dir.y};
-            // проверка стен
             if (head.x<0 || head.x>=COLS || head.y<0 || head.y>=ROWS) {
                 gameOver = true;
                 clearInterval(interval);
@@ -438,7 +441,6 @@
                 draw();
                 return;
             }
-            // проверка на себя
             if (snake.some(seg => seg.x===head.x && seg.y===head.y)) {
                 gameOver = true;
                 clearInterval(interval);
@@ -451,7 +453,6 @@
                 score++;
                 setRecord('snake', score);
                 sound.flip();
-                // new food
                 do {
                     food = {x: Math.floor(Math.random()*COLS), y: Math.floor(Math.random()*ROWS)};
                 } while (snake.some(seg => seg.x===food.x && seg.y===food.y));
@@ -473,13 +474,16 @@
             left: () => changeDir(-1,0),
             right: () => changeDir(1,0),
             enter: () => { if (gameOver) { snake = [{x:10,y:10}]; dir={x:0,y:-1}; score=0; gameOver=false; clearInterval(interval); interval = setInterval(step, 200); draw(); } },
-            tap: () => { /* ничего */ }
+            tap: () => {}
         });
 
         interval = setInterval(step, 200);
         draw();
-        container._snakeInterval = interval;
-        container._input = input;
+
+        container._gameStop = function() {
+            if (interval) clearInterval(interval);
+            input.destroy();
+        };
     };
 
     // 3. 2048
@@ -514,7 +518,6 @@
                     cells[idx].style.color = val ? '#000' : '#ccc';
                 }
             }
-            // показываем счёт
             let scoreEl = container.querySelector('.score');
             if (!scoreEl) {
                 scoreEl = document.createElement('div');
@@ -523,8 +526,12 @@
                 container.insertBefore(scoreEl, grid);
             }
             scoreEl.textContent = 'Score: '+score;
+            // Удаляем старый оверлей, если есть
+            const oldGo = container.querySelector('.gameover-msg');
+            if (oldGo) oldGo.remove();
             if (gameOver) {
                 const go = document.createElement('div');
+                go.className = 'gameover-msg';
                 go.textContent = 'GAME OVER (нажмите Enter для перезапуска)';
                 go.style.cssText = 'text-align:center;font-size:24px;color:red;padding:20px;';
                 container.appendChild(go);
@@ -540,7 +547,6 @@
         }
 
         function slideRow(row) {
-            // сдвиг влево
             let newRow = row.filter(v=>v!==0);
             for (let i=0;i<newRow.length-1;i++) {
                 if (newRow[i]===newRow[i+1]) {
@@ -557,28 +563,27 @@
             if (gameOver) return;
             let moved = false;
             const old = board.map(row=>[...row]);
-            if (dy === -1) { // up
+            if (dy === -1) {
                 for (let c=0;c<4;c++) {
                     const col = [board[0][c], board[1][c], board[2][c], board[3][c]];
                     const newCol = slideRow(col);
                     for (let r=0;r<4;r++) board[r][c] = newCol[r];
                 }
-            } else if (dy === 1) { // down
+            } else if (dy === 1) {
                 for (let c=0;c<4;c++) {
                     const col = [board[3][c], board[2][c], board[1][c], board[0][c]];
                     const newCol = slideRow(col);
                     for (let r=0;r<4;r++) board[3-r][c] = newCol[r];
                 }
-            } else if (dx === -1) { // left
+            } else if (dx === -1) {
                 for (let r=0;r<4;r++) {
                     board[r] = slideRow(board[r]);
                 }
-            } else if (dx === 1) { // right
+            } else if (dx === 1) {
                 for (let r=0;r<4;r++) {
                     board[r] = slideRow(board[r].reverse()).reverse();
                 }
             }
-            // check if moved
             for (let r=0;r<4;r++) for (let c=0;c<4;c++) if (board[r][c]!==old[r][c]) moved = true;
             if (moved) {
                 addRandom();
@@ -586,12 +591,6 @@
                 sound.move();
                 updateUI();
             }
-            // check win
-            for (let r=0;r<4;r++) for (let c=0;c<4;c++) if (board[r][c]===2048) {
-                sound.win();
-                // Можно показать победу
-            }
-            // check lose
             let canMove = false;
             for (let r=0;r<4;r++) for (let c=0;c<4;c++) {
                 if (board[r][c]===0) canMove = true;
@@ -607,9 +606,6 @@
             gameOver = false;
             addRandom();
             addRandom();
-            // удаляем старый оверлей
-            const go = container.querySelector('div:last-child');
-            if (go && go.textContent.includes('GAME OVER')) go.remove();
             updateUI();
         }
 
@@ -625,14 +621,15 @@
         addRandom();
         addRandom();
         updateUI();
-        container._input = input;
+
+        container._gameStop = function() {
+            input.destroy();
+        };
     };
 
-    // 4. Пасьянс косынка (упрощённо)
+    // 4. Пасьянс косынка (заглушка)
     gameFactories.solitaire = function(container) {
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Пасьянс косынка (упрощённый)</div>';
-        // Минимальная реализация - просто показать карты, для демонстрации
-        // В реальности требуется сложная логика, здесь только заглушка
         const div = document.createElement('div');
         div.textContent = 'Игра в разработке. Используйте стрелки и Enter для имитации.';
         div.style.cssText = 'color:#fff;padding:20px;text-align:center;';
@@ -641,7 +638,7 @@
             enter: () => { sound.click(); div.textContent = 'Клик! (имитация)'; },
             tap: () => { sound.click(); div.textContent = 'Клик! (имитация)'; }
         });
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
     // 5. Арканоид
@@ -682,22 +679,18 @@
 
         function draw() {
             ctx.clearRect(0,0,W,H);
-            // bricks
             bricks.forEach(b => {
                 if (b.alive) {
                     ctx.fillStyle = b.color;
                     ctx.fillRect(b.x, b.y, b.w, b.h);
                 }
             });
-            // paddle
             ctx.fillStyle = '#0af';
             ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
-            // ball
             ctx.beginPath();
             ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
             ctx.fillStyle = '#fff';
             ctx.fill();
-            // score
             ctx.fillStyle = '#fff';
             ctx.font = '16px sans-serif';
             ctx.fillText('Score: '+score, 10, 20);
@@ -715,10 +708,8 @@
 
         function step() {
             if (gameOver || win) return;
-            // движение мяча
             ball.x += ball.dx;
             ball.y += ball.dy;
-            // столкновение со стенами
             if (ball.x - ball.r < 0 || ball.x + ball.r > W) { ball.dx = -ball.dx; sound.flip(); }
             if (ball.y - ball.r < 0) { ball.dy = -ball.dy; sound.flip(); }
             if (ball.y + ball.r > H) {
@@ -728,15 +719,12 @@
                 draw();
                 return;
             }
-            // столкновение с ракеткой
             if (ball.dy > 0 && ball.y + ball.r >= paddle.y && ball.x >= paddle.x && ball.x <= paddle.x + paddle.w) {
                 ball.dy = -ball.dy;
-                // изменение угла в зависимости от места попадания
                 let hit = (ball.x - (paddle.x + paddle.w/2)) / (paddle.w/2);
                 ball.dx = hit * 3;
                 sound.move();
             }
-            // столкновение с кирпичами
             bricks.forEach(b => {
                 if (!b.alive) return;
                 if (ball.x + ball.r > b.x && ball.x - ball.r < b.x + b.w &&
@@ -745,14 +733,12 @@
                     score += 10;
                     setRecord('arkanoid', score);
                     sound.flip();
-                    // отскок
                     let overlapX = Math.min(ball.x + ball.r - b.x, b.x + b.w - (ball.x - ball.r));
-                    let overlapY = Math.min(ball.y + ball.r - b.y, b.y + b.h - (ball.y - ball.r));
+                    let overlapY = Math.min(ball.y + ball.r - b.y, b.y + b.h - (ball.y - ball.y));
                     if (overlapX < overlapY) ball.dx = -ball.dx;
                     else ball.dy = -ball.dy;
                 }
             });
-            // проверка победы
             if (bricks.every(b => !b.alive)) {
                 win = true;
                 sound.win();
@@ -779,7 +765,7 @@
             left: () => { if (paddle.x > 0) paddle.x -= 15; draw(); },
             right: () => { if (paddle.x < W - paddle.w) paddle.x += 15; draw(); },
             enter: () => { if (gameOver || win) reset(); },
-            tap: (x,y) => { // двигаем ракетку по клику
+            tap: (x,y) => {
                 let rect = canvas.getBoundingClientRect();
                 let scaleX = canvas.width / rect.width;
                 let px = (x - paddle.w/2) * scaleX;
@@ -791,8 +777,11 @@
         });
 
         step();
-        container._input = input;
-        container._animId = animId;
+
+        container._gameStop = function() {
+            if (animId) cancelAnimationFrame(animId);
+            input.destroy();
+        };
     };
 
     // 6. Понг
@@ -834,9 +823,7 @@
             if (gameOver) return;
             ball.x += ball.dx;
             ball.y += ball.dy;
-            // стены
             if (ball.y - ball.r < 0 || ball.y + ball.r > H) { ball.dy = -ball.dy; sound.flip(); }
-            // столкновение с ракетками
             if (ball.dx < 0 && ball.x - ball.r <= leftPaddle.x + leftPaddle.w && ball.y >= leftPaddle.y && ball.y <= leftPaddle.y + leftPaddle.h) {
                 ball.dx = -ball.dx;
                 ball.x = leftPaddle.x + leftPaddle.w + ball.r;
@@ -847,7 +834,6 @@
                 ball.x = rightPaddle.x - ball.r;
                 sound.move();
             }
-            // голы
             if (ball.x < 0) {
                 scoreRight++;
                 setRecord('pong', Math.max(scoreLeft, scoreRight));
@@ -858,7 +844,6 @@
                 setRecord('pong', Math.max(scoreLeft, scoreRight));
                 resetBall();
             }
-            // AI для левой ракетки (простой)
             if (ball.dx < 0) {
                 let target = ball.y - leftPaddle.h/2;
                 leftPaddle.y += (target - leftPaddle.y) * 0.1;
@@ -888,7 +873,7 @@
             up: () => { rightPaddle.y -= 20; if (rightPaddle.y<0) rightPaddle.y=0; draw(); },
             down: () => { rightPaddle.y += 20; if (rightPaddle.y>H-rightPaddle.h) rightPaddle.y=H-rightPaddle.h; draw(); },
             enter: () => { if (gameOver) resetGame(); },
-            tap: (x,y) => { // переместить правую ракетку по вертикали
+            tap: (x,y) => {
                 let rect = canvas.getBoundingClientRect();
                 let scaleY = canvas.height / rect.height;
                 let posY = y * scaleY - rightPaddle.h/2;
@@ -901,11 +886,14 @@
 
         resetBall();
         step();
-        container._input = input;
-        container._animId = animId;
+
+        container._gameStop = function() {
+            if (animId) cancelAnimationFrame(animId);
+            input.destroy();
+        };
     };
 
-    // 7. Покер (упрощённо) - просто генерация случайных карт
+    // 7. Покер
     gameFactories.poker = function(container) {
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Покер (упрощённый)</div>';
         const div = document.createElement('div');
@@ -928,7 +916,7 @@
             tap: () => deal()
         });
         deal();
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
     // 8. 21 (очко)
@@ -1016,7 +1004,8 @@
             tap: () => hit()
         });
         startGame();
-        container._input = input;
+
+        container._gameStop = function() { input.destroy(); };
     };
 
     // 9. Пятнашки
@@ -1027,19 +1016,18 @@
         container.appendChild(grid);
         let tiles = [];
         let empty = {r:3,c:3};
-        const cells = [];
+        let gameWon = false;
 
         function init() {
             tiles = [];
             for (let i=1;i<16;i++) tiles.push(i);
             tiles.push(0);
-            // перемешиваем
             for (let i=tiles.length-1;i>0;i--) {
                 let j=Math.floor(Math.random()*(i+1));
                 [tiles[i],tiles[j]]=[tiles[j],tiles[i]];
             }
-            // находим пустую
             for (let r=0;r<4;r++) for (let c=0;c<4;c++) if (tiles[r*4+c]===0) empty={r,c};
+            gameWon = false;
             render();
         }
 
@@ -1055,14 +1043,13 @@
                     cell.dataset.c = c;
                     cell.addEventListener('click', () => handleClick(r,c));
                     grid.appendChild(cell);
-                    cells.push(cell);
                 }
             }
         }
 
         function handleClick(r,c) {
+            if (gameWon) return;
             if (Math.abs(r-empty.r)+Math.abs(c-empty.c)===1) {
-                // swap
                 let idx1 = r*4+c, idx2 = empty.r*4+empty.c;
                 [tiles[idx1], tiles[idx2]] = [tiles[idx2], tiles[idx1]];
                 empty = {r,c};
@@ -1076,23 +1063,25 @@
             for (let i=0;i<15;i++) if (tiles[i]!==i+1) return;
             sound.win();
             setRecord('fifteen', 1);
+            gameWon = true;
             alert('Поздравляем! Вы собрали пятнашки!');
         }
 
         const input = new GameInput(container, {
-            up: () => { if (empty.r<3) handleClick(empty.r+1, empty.c); },
-            down: () => { if (empty.r>0) handleClick(empty.r-1, empty.c); },
-            left: () => { if (empty.c<3) handleClick(empty.r, empty.c+1); },
-            right: () => { if (empty.c>0) handleClick(empty.r, empty.c-1); },
+            up: () => { if (empty.r<3 && !gameWon) handleClick(empty.r+1, empty.c); },
+            down: () => { if (empty.r>0 && !gameWon) handleClick(empty.r-1, empty.c); },
+            left: () => { if (empty.c<3 && !gameWon) handleClick(empty.r, empty.c+1); },
+            right: () => { if (empty.c>0 && !gameWon) handleClick(empty.r, empty.c-1); },
             enter: () => init(),
             tap: () => {}
         });
 
         init();
-        container._input = input;
+
+        container._gameStop = function() { input.destroy(); };
     };
 
-    // 10. Трубопровод
+    // 10. Трубопровод (заглушка)
     gameFactories.pipes = function(container) {
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Трубопровод (упрощённо)</div>';
         const div = document.createElement('div');
@@ -1104,10 +1093,10 @@
             enter: () => { rotation = (rotation+1)%4; div.textContent = 'Труба повёрнута на '+rotation*90+'°'; sound.flip(); },
             tap: () => { rotation = (rotation+1)%4; div.textContent = 'Труба повёрнута на '+rotation*90+'°'; sound.flip(); }
         });
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
-    // 11. Xonix
+    // 11. Xonix (заглушка)
     gameFactories.xonix = function(container) {
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Xonix (упрощённо)</div>';
         const div = document.createElement('div');
@@ -1115,10 +1104,10 @@
         div.textContent = 'Игра в разработке.';
         container.appendChild(div);
         const input = new GameInput(container, {});
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
-    // 12. Sokoban
+    // 12. Sokoban (заглушка)
     gameFactories.sokoban = function(container) {
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Sokoban (упрощённо)</div>';
         const div = document.createElement('div');
@@ -1126,10 +1115,10 @@
         div.textContent = 'Игра в разработке.';
         container.appendChild(div);
         const input = new GameInput(container, {});
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
-    // 13. Судоку
+    // 13. Судоку (заглушка)
     gameFactories.sudoku = function(container) {
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Судоку (упрощённо)</div>';
         const div = document.createElement('div');
@@ -1137,10 +1126,10 @@
         div.textContent = 'Игра в разработке.';
         container.appendChild(div);
         const input = new GameInput(container, {});
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
-    // 14. Шашки
+    // 14. Шашки (заглушка)
     gameFactories.checkers = function(container) {
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Шашки (упрощённо)</div>';
         const div = document.createElement('div');
@@ -1148,10 +1137,10 @@
         div.textContent = 'Игра в разработке.';
         container.appendChild(div);
         const input = new GameInput(container, {});
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
-    // 15. Шахматы
+    // 15. Шахматы (заглушка)
     gameFactories.chess = function(container) {
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Шахматы (упрощённо)</div>';
         const div = document.createElement('div');
@@ -1159,7 +1148,7 @@
         div.textContent = 'Игра в разработке.';
         container.appendChild(div);
         const input = new GameInput(container, {});
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
     // 16. Маджонг
@@ -1167,21 +1156,22 @@
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Маджонг (упрощённо)</div>';
         const div = document.createElement('div');
         div.style.cssText = 'color:#fff;padding:20px;text-align:center;';
-        div.textContent = 'Игра в разработке.';
+        div.textContent = 'Загрузка изображения...';
         container.appendChild(div);
-        // Для изображений: можно загрузить случайное изображение и показать
         getRandomImage((url) => {
+            if (!container.parentNode) return; // контейнер удалён
             const img = document.createElement('img');
             img.src = url;
             img.style.maxWidth = '200px';
             img.style.maxHeight = '200px';
+            div.textContent = 'Изображение для Маджонга:';
             container.appendChild(img);
         });
         const input = new GameInput(container, {});
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
-    // 17. Морской бой
+    // 17. Морской бой (заглушка)
     gameFactories.battleship = function(container) {
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Морской бой (упрощённо)</div>';
         const div = document.createElement('div');
@@ -1189,7 +1179,7 @@
         div.textContent = 'Игра в разработке.';
         container.appendChild(div);
         const input = new GameInput(container, {});
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
     // 18. Три в ряд
@@ -1197,21 +1187,22 @@
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Три в ряд (упрощённо)</div>';
         const div = document.createElement('div');
         div.style.cssText = 'color:#fff;padding:20px;text-align:center;';
-        div.textContent = 'Игра в разработке.';
+        div.textContent = 'Загрузка изображения...';
         container.appendChild(div);
-        // Покажем случайное изображение
         getRandomImage((url) => {
+            if (!container.parentNode) return;
             const img = document.createElement('img');
             img.src = url;
             img.style.maxWidth = '200px';
             img.style.maxHeight = '200px';
+            div.textContent = 'Изображение для игры "Три в ряд":';
             container.appendChild(img);
         });
         const input = new GameInput(container, {});
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
-    // 19. Lampa party (клон Mario party)
+    // 19. Lampa party
     gameFactories.party = function(container) {
         container.innerHTML = '<div style="padding:20px;font-size:20px;">Lampa party</div>';
         const div = document.createElement('div');
@@ -1219,8 +1210,15 @@
         div.textContent = 'Мини-игра: бросок кубика. Нажмите Enter.';
         container.appendChild(div);
         let steps = 0;
+        let gameWon = false;
         const input = new GameInput(container, {
             enter: () => {
+                if (gameWon) {
+                    steps = 0;
+                    gameWon = false;
+                    div.textContent = 'Новая игра! Нажмите Enter.';
+                    return;
+                }
                 let roll = Math.floor(Math.random()*6)+1;
                 steps += roll;
                 div.textContent = `Выпало ${roll}, всего шагов ${steps}. Нажмите Enter снова.`;
@@ -1228,12 +1226,13 @@
                 if (steps >= 20) {
                     sound.win();
                     setRecord('party', steps);
-                    div.textContent += ' Победа!';
+                    div.textContent += ' Победа! Нажмите Enter для новой игры.';
+                    gameWon = true;
                 }
             },
             tap: () => {}
         });
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
     // 20. Пазл
@@ -1244,18 +1243,17 @@
         div.textContent = 'Загрузка изображения...';
         container.appendChild(div);
         getRandomImage((url) => {
+            if (!container.parentNode) return;
             const img = document.createElement('img');
             img.src = url;
             img.style.maxWidth = '300px';
             img.style.maxHeight = '300px';
             img.onload = () => {
-                // Разрезаем на 4 части для демонстрации
                 const canvas = document.createElement('canvas');
                 canvas.width = 300;
                 canvas.height = 300;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, 300, 300);
-                // Показываем кусочки
                 div.innerHTML = 'Пазл (4 части), нажмите Enter для перемешивания.';
                 const grid = document.createElement('div');
                 grid.style.cssText = 'display:grid;grid-template-columns:repeat(2,150px);gap:5px;justify-content:center;margin:10px auto;';
@@ -1276,13 +1274,11 @@
                     }
                 }
                 container.appendChild(grid);
-                // Перемешивание
                 let shuffled = false;
                 const shuffleBtn = document.createElement('button');
                 shuffleBtn.textContent = 'Перемешать';
                 shuffleBtn.onclick = () => {
                     if (!shuffled) {
-                        // просто меняем местами
                         let childs = Array.from(grid.children);
                         for (let i=childs.length-1;i>0;i--) {
                             let j=Math.floor(Math.random()*(i+1));
@@ -1294,22 +1290,37 @@
                 };
                 container.appendChild(shuffleBtn);
             };
+            img.onerror = () => {
+                div.textContent = 'Не удалось загрузить изображение.';
+            };
         });
         const input = new GameInput(container, {
             enter: () => { sound.click(); },
             tap: () => { sound.click(); }
         });
-        container._input = input;
+        container._gameStop = function() { input.destroy(); };
     };
 
     // ======== Создание меню ========
     function createMenu() {
         const activity = Lampa.Activity.active();
-        if (!activity) return;
+        if (!activity) {
+            console.error('Нет активной активности');
+            return;
+        }
         const content = activity.content;
-        if (!content) return;
+        if (!content) {
+            console.error('Нет контента');
+            return;
+        }
 
+        // Останавливаем предыдущую игру, если есть
+        if (content._gameStop) {
+            content._gameStop();
+            delete content._gameStop;
+        }
         content.innerHTML = '';
+
         const title = document.createElement('div');
         title.textContent = PLUGIN_TITLE;
         title.style.cssText = 'font-size:32px;font-weight:bold;color:#fff;text-align:center;padding:20px;';
@@ -1323,14 +1334,12 @@
             const card = document.createElement('div');
             card.style.cssText = 'background:#2a2a2a;border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:0.2s;color:#fff;';
             card.textContent = game.title;
-            // Рекорд
             const record = getRecord(game.id);
             const recSpan = document.createElement('div');
             recSpan.textContent = `Рекорд: ${record}`;
             recSpan.style.cssText = 'font-size:14px;color:#aaa;margin-top:10px;';
             card.appendChild(recSpan);
             card.addEventListener('click', () => launchGame(game.id));
-            // Фокус для пульта
             card.setAttribute('tabindex', '0');
             card.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') launchGame(game.id);
@@ -1340,28 +1349,41 @@
     }
 
     // ======== Регистрация плагина ========
-    Lampa.plugin({
-        name: PLUGIN_NAME,
-        title: PLUGIN_TITLE,
-        icon: 'gamepad', // иконка из Lampa
-        onReady: function() {
-            // Добавляем пункт в главное меню
-            Lampa.Menu.add({
-                id: PLUGIN_NAME,
-                title: PLUGIN_TITLE,
-                icon: 'gamepad',
-                action: function() {
-                    Lampa.Activity.push({
-                        url: '',
-                        title: PLUGIN_TITLE,
-                        onLoad: function() {
-                            createMenu();
-                        }
-                    });
-                }
-            });
+    // Проверяем, не зарегистрирован ли уже плагин, чтобы избежать дублирования
+    let pluginRegistered = false;
+    try {
+        // Простая проверка: если пункт меню уже существует, не добавляем повторно
+        const menuItems = Lampa.Menu.list ? Lampa.Menu.list() : [];
+        if (menuItems.some(item => item.id === PLUGIN_NAME)) {
+            pluginRegistered = true;
         }
-    });
+    } catch (e) {}
 
-    console.log('Плагин Lampa Games загружен');
+    if (!pluginRegistered) {
+        Lampa.plugin({
+            name: PLUGIN_NAME,
+            title: PLUGIN_TITLE,
+            icon: 'gamepad',
+            onReady: function() {
+                Lampa.Menu.add({
+                    id: PLUGIN_NAME,
+                    title: PLUGIN_TITLE,
+                    icon: 'gamepad',
+                    action: function() {
+                        Lampa.Activity.push({
+                            url: '',
+                            title: PLUGIN_TITLE,
+                            onLoad: function() {
+                                createMenu();
+                            }
+                        });
+                    }
+                });
+                console.log('Плагин Lampa Games загружен');
+            }
+        });
+    } else {
+        console.log('Плагин Lampa Games уже зарегистрирован');
+    }
+
 })();
