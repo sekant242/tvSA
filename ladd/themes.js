@@ -4,22 +4,52 @@
     var STYLE_ID = 'theme_layout_style';
     var STORAGE_KEY = 'interface_theme_layout';
     var ATTR = 'data-layout';
-    var CARD_ATTR = 'data-cards-container';
+    var FILM_ATTR = 'data-film-card';
 
     var observer = null;
     var currentTheme = 'classic';
     var origBg = {};
 
+    // Перфорация: прямоугольники 18×10 со скруглением, шаг 26px
+    var PERF = 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'26\' height=\'14\'%3E%3Crect x=\'4\' y=\'2\' width=\'18\' height=\'10\' rx=\'2\' fill=\'%23e8e8e8\'/%3E%3C/svg%3E")';
+
     // ================================================================
-    //  УТИЛИТЫ
+    //  ПОМЕТКА КАРТОЧЕК ФИЛЬМОВ
     // ================================================================
 
-    function cardMovie(card) {
-        if (!card) return null;
+    function tagFilmCards() {
+        var cards = document.querySelectorAll('.card');
+        for (var i = 0; i < cards.length; i++) {
+            var c = cards[i];
+            if (c.hasAttribute(FILM_ATTR)) continue;
+            // Обёртка категории не содержит img, карточка фильма — содержит
+            if (c.querySelector('img')) c.setAttribute(FILM_ATTR, '');
+        }
+    }
+
+    function untagFilmCards() {
+        var tagged = document.querySelectorAll('[' + FILM_ATTR + ']');
+        for (var i = 0; i < tagged.length; i++) tagged[i].removeAttribute(FILM_ATTR);
+    }
+
+    // ================================================================
+    //  БЕЙДЖ "СКОРО"
+    // ================================================================
+
+    function getMovie(card) {
         try {
             var $c = window.jQuery ? window.jQuery(card) : null;
-            return $c && $c.data ? ($c.data('movie') || null) : null;
-        } catch (e) { return null; }
+            var m = $c && $c.data ? $c.data('movie') : null;
+            if (m) return m;
+        } catch (e) {}
+
+        // Fallback: ищем во всех соседних карточках активной активности
+        try {
+            var act = window.Lampa && Lampa.Activity && Lampa.Activity.active();
+            if (act && act.activity && act.activity.movie) return act.activity.movie;
+        } catch (e) {}
+
+        return null;
     }
 
     function isFuture(m) {
@@ -30,12 +60,33 @@
         return !isNaN(t) && t > Date.now();
     }
 
-    // Пометка родителей всех карточек
-    function tagContainers() {
-        var cards = document.querySelectorAll('.card');
+    function refreshUpcomingBadges() {
+        var cards = document.querySelectorAll('[' + FILM_ATTR + ']');
         for (var i = 0; i < cards.length; i++) {
-            var p = cards[i].parentElement;
-            if (p && !p.hasAttribute(CARD_ATTR)) p.setAttribute(CARD_ATTR, '');
+            var card = cards[i];
+            var existing = card.querySelector('.layout-badge.upcoming');
+
+            // Ищем movie по каждому card — если у card нет .data('movie'), пробуем так:
+            var m = null;
+            try {
+                var $c = window.jQuery ? window.jQuery(card) : null;
+                m = $c && $c.data ? ($c.data('movie') || null) : null;
+            } catch (e) {}
+
+            // Если не нашли — берём movie из активной активности (одинаков для всех карточек активности)
+            if (!m) m = getMovie(card);
+
+            var future = isFuture(m);
+
+            if (future && !existing) {
+                var d = m.release_date || m.first_air_date;
+                var b = document.createElement('div');
+                b.className = 'layout-badge upcoming';
+                b.textContent = 'СКОРО · ' + d;
+                card.appendChild(b);
+            } else if (!future && existing) {
+                existing.parentNode.removeChild(existing);
+            }
         }
     }
 
@@ -44,63 +95,39 @@
         for (var i = 0; i < b.length; i++) if (b[i].parentNode) b[i].parentNode.removeChild(b[i]);
     }
 
-    function addUpcomingBadges() {
-        var cards = document.querySelectorAll('.card');
-        for (var i = 0; i < cards.length; i++) {
-            var card = cards[i];
-            var m = cardMovie(card);
-            if (!m) continue;
-            if (!isFuture(m)) continue;
-            if (card.querySelector('.layout-badge.upcoming')) continue;
-            var d = m.release_date || m.first_air_date;
-            var b = document.createElement('div');
-            b.className = 'layout-badge upcoming';
-            b.textContent = 'СКОРО · ' + d;
-            card.appendChild(b);
-        }
-    }
+    // ================================================================
+    //  НАБЛЮДЕНИЕ
+    // ================================================================
 
-    function stopObserving() {
-        if (observer) { observer.disconnect(); observer = null; }
-    }
+    function stopObserving() { if (observer) { observer.disconnect(); observer = null; } }
 
     function startObserving() {
         stopObserving();
-        tagContainers();
+        tagFilmCards();
+        if (currentTheme === 'filmstrip') refreshUpcomingBadges();
+
         var raf = null;
-        observer = new MutationObserver(function (muts) {
-            var hasNew = false;
-            for (var i = 0; i < muts.length; i++) {
-                if (muts[i].addedNodes && muts[i].addedNodes.length) { hasNew = true; break; }
-            }
-            if (!hasNew) return;
+        observer = new MutationObserver(function () {
             if (raf) return;
             raf = (window.requestAnimationFrame || setTimeout)(function () {
                 raf = null;
-                tagContainers();
-                if (currentTheme === 'filmstrip') addUpcomingBadges();
-            }, 16);
+                tagFilmCards();
+                if (currentTheme === 'filmstrip') refreshUpcomingBadges();
+            }, 32);
         });
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
     // ================================================================
-    //  ПЕРЕХВАТ ФОНА LAMPA
+    //  ФОН
     // ================================================================
 
     function clearBgInline() {
-        var nodes = document.querySelectorAll(
-            '.background, .background__layer, .background::after, .background > *'
-        );
+        var nodes = document.querySelectorAll('.background, .background__layer');
         for (var i = 0; i < nodes.length; i++) {
             if (!nodes[i].style) continue;
             nodes[i].style.backgroundImage = 'none';
             nodes[i].style.background = '';
-        }
-        // Явно прячем слой с картинкой
-        var layers = document.querySelectorAll('.background__layer');
-        for (var j = 0; j < layers.length; j++) {
-            layers[j].style.backgroundImage = 'none';
         }
     }
 
@@ -112,16 +139,11 @@
             if (typeof Lampa.Background[fn] === 'function') {
                 origBg[fn] = Lampa.Background[fn];
                 Lampa.Background[fn] = function () {
-                    if (currentTheme !== 'classic') {
-                        clearBgInline();
-                        return;
-                    }
+                    if (currentTheme !== 'classic') { clearBgInline(); return; }
                     return origBg[fn].apply(this, arguments);
                 };
             }
         });
-
-        // Также проверяем, что фон не меняется через прямой вызов
         setTimeout(clearBgInline, 50);
     }
 
@@ -134,29 +156,18 @@
     }
 
     // ================================================================
-    //  ПЕРФОРАЦИЯ (SVG data-URI — стабильно на всех платформах)
-    // ================================================================
-
-    var PERF_SVG = 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'26\' height=\'14\'%3E%3Crect x=\'4\' y=\'2\' width=\'18\' height=\'10\' rx=\'2\' fill=\'%23e8e8e8\'/%3E%3C/svg%3E")';
-
-    // ================================================================
     //  ТЕМЫ
     // ================================================================
 
     var THEMES = {
 
-        classic: {
-            title: 'Классика (по умолчанию)',
-            css: '',
-            apply: null
-        },
+        classic: { title: 'Классика (по умолчанию)', css: '', apply: null },
 
         // ------------------------------------------------------------
-        // КИНОЛЕНТА — с настоящей перфорацией
+        // КИНОЛЕНТА — перфорация на каждой карточке
         // ------------------------------------------------------------
         filmstrip: {
             title: 'Кинолента',
-            hint: 'Ч/б кадры на 35мм плёнке с перфорацией',
             css: [
 
                 /* ---- ФОН ---- */
@@ -166,86 +177,61 @@
                 '  background: #050505 !important;',
                 '  background-image: none !important;',
                 '}',
-                'body[data-layout="filmstrip"] .background::after,',
-                'body[data-layout="filmstrip"] .background::before {',
-                '  content: none !important;',
-                '  background: none !important;',
-                '}',
 
-                /* ---- КОНТЕЙНЕР С КАДРАМИ ---- */
-                'body[data-layout="filmstrip"] [data-cards-container] {',
-                '  display: grid !important;',
-                '  grid-template-columns: repeat(auto-fill, minmax(13em, 1fr)) !important;',
-                '  gap: 1.4em !important;',
-                '  padding: 3.2em 2.5em !important;',
-                '  background: #0a0a0a !important;',
+                /* ---- КАДР (карточка) ---- */
+                'body[data-layout="filmstrip"] [' + FILM_ATTR + '] {',
                 '  position: relative !important;',
-                '}',
-
-                /* ---- ПЕРФОРАЦИЯ СВЕРХУ ---- */
-                'body[data-layout="filmstrip"] [data-cards-container]::before {',
-                '  content: "" !important;',
-                '  position: absolute !important;',
-                '  left: 0 !important;',
-                '  right: 0 !important;',
-                '  top: .55em !important;',
-                '  height: 14px !important;',
-                '  background-image: ' + PERF_SVG + ' !important;',
-                '  background-repeat: repeat-x !important;',
-                '  background-size: 26px 14px !important;',
-                '  background-position: left center !important;',
-                '  opacity: .95 !important;',
-                '  z-index: 2 !important;',
-                '  pointer-events: none !important;',
-                '}',
-
-                /* ---- ПЕРФОРАЦИЯ СНИЗУ ---- */
-                'body[data-layout="filmstrip"] [data-cards-container]::after {',
-                '  content: "" !important;',
-                '  position: absolute !important;',
-                '  left: 0 !important;',
-                '  right: 0 !important;',
-                '  bottom: .55em !important;',
-                '  height: 14px !important;',
-                '  background-image: ' + PERF_SVG + ' !important;',
-                '  background-repeat: repeat-x !important;',
-                '  background-size: 26px 14px !important;',
-                '  background-position: left center !important;',
-                '  opacity: .95 !important;',
-                '  z-index: 2 !important;',
-                '  pointer-events: none !important;',
-                '}',
-
-                /* ---- КАДР (КАРТОЧКА) ---- */
-                'body[data-layout="filmstrip"] .card {',
-                '  aspect-ratio: 4 / 3 !important;',
-                '  border-radius: 0 !important;',
+                '  padding: 14px 0 !important;',
+                '  background-color: #000 !important;',
+                /* Перфорация сверху и снизу — два фоновых слоя */
+                '  background-image: ' + PERF + ', ' + PERF + ' !important;',
+                '  background-position: top left, bottom left !important;',
+                '  background-repeat: repeat-x, repeat-x !important;',
+                '  background-size: 26px 14px, 26px 14px !important;',
+                '  aspect-ratio: unset !important;',
+                '  height: auto !important;',
+                '  min-height: 0 !important;',
                 '  overflow: hidden !important;',
-                '  background: #000 !important;',
-                '  border: 3px solid #0a0a0a !important;',
-                '  box-shadow: inset 0 0 0 1px #1a1a1a, 0 8px 16px rgba(0,0,0,.7) !important;',
-                '  transition: filter .25s ease, transform .25s ease, border-color .25s ease !important;',
-                '  filter: grayscale(100%) contrast(.9) brightness(.8) !important;',
-                '  position: relative !important;',
+                '  box-sizing: border-box !important;',
+                '  border: none !important;',
+                '  border-radius: 0 !important;',
+                '  box-shadow: 0 8px 20px rgba(0,0,0,.8) !important;',
+                '  filter: grayscale(100%) contrast(.9) brightness(.85) !important;',
+                '  transition: filter .25s ease, box-shadow .25s ease, transform .25s ease !important;',
                 '}',
 
-                'body[data-layout="filmstrip"] .card img {',
+                /* ---- ИЗОБРАЖЕНИЕ ВНУТРИ (кадр 4:3) ---- */
+                'body[data-layout="filmstrip"] [' + FILM_ATTR + '] img {',
+                '  display: block !important;',
                 '  width: 100% !important;',
-                '  height: 100% !important;',
+                '  height: auto !important;',
+                '  aspect-ratio: 4 / 3 !important;',
                 '  object-fit: cover !important;',
+                '  border-radius: 0 !important;',
+                '  margin: 0 !important;',
+                '  padding: 0 !important;',
                 '}',
 
-                'body[data-layout="filmstrip"] .card.focus {',
+                /* Обёртка img (если есть) — растянуть по ширине, не мешать */
+                'body[data-layout="filmstrip"] [' + FILM_ATTR + '] > div:not(.card__title):not(.layout-badge) {',
+                '  width: 100% !important;',
+                '  height: auto !important;',
+                '  aspect-ratio: unset !important;',
+                '  margin: 0 !important;',
+                '  padding: 0 !important;',
+                '}',
+
+                'body[data-layout="filmstrip"] [' + FILM_ATTR + '].focus {',
                 '  filter: grayscale(0) contrast(1.1) brightness(1) !important;',
-                '  border-color: #f5c518 !important;',
                 '  box-shadow: 0 0 0 2px #f5c518, 0 12px 32px rgba(245,197,24,.35) !important;',
-                '  transform: scale(1.04) !important;',
+                '  transform: scale(1.03) !important;',
                 '  z-index: 5 !important;',
                 '}',
 
-                'body[data-layout="filmstrip"] .card__title {',
+                /* ---- ЗАГОЛОВОК ПОВЕРХ КАДРА ---- */
+                'body[data-layout="filmstrip"] [' + FILM_ATTR + '] .card__title {',
                 '  position: absolute !important;',
-                '  bottom: 0 !important;',
+                '  bottom: 14px !important;',
                 '  left: 0 !important;',
                 '  right: 0 !important;',
                 '  padding: 1.6em .6em .5em !important;',
@@ -256,29 +242,32 @@
                 '  letter-spacing: .06em !important;',
                 '  text-transform: uppercase !important;',
                 '  text-shadow: none !important;',
+                '  z-index: 3 !important;',
                 '}',
 
                 /* ---- БЕЙДЖ "СКОРО" ПОД КАДРОМ ---- */
-                'body[data-layout="filmstrip"] .layout-badge.upcoming {',
+                'body[data-layout="filmstrip"] [' + FILM_ATTR + '] .layout-badge.upcoming {',
                 '  position: absolute !important;',
-                '  left: -3px !important;',
-                '  right: -3px !important;',
-                '  bottom: -1.8em !important;',
-                '  height: 1.6em !important;',
+                '  left: 0 !important;',
+                '  right: 0 !important;',
+                '  bottom: 0 !important;',
+                '  height: 14px !important;',
                 '  display: flex !important;',
                 '  align-items: center !important;',
                 '  justify-content: center !important;',
                 '  background: linear-gradient(90deg, #ff0090, #ffea00, #00c8ff) !important;',
                 '  color: #000 !important;',
                 '  font-family: "Courier New", monospace !important;',
-                '  font-size: .65em !important;',
+                '  font-size: 9px !important;',
                 '  font-weight: 700 !important;',
                 '  letter-spacing: .1em !important;',
                 '  text-transform: uppercase !important;',
                 '  z-index: 4 !important;',
+                '  overflow: hidden !important;',
+                '  white-space: nowrap !important;',
                 '}',
 
-                /* ---- HEAD ---- */
+                /* ---- HEAD / МЕНЮ ---- */
                 'body[data-layout="filmstrip"] .head {',
                 '  background: #000 !important;',
                 '  border-bottom: 2px solid #f5c518 !important;',
@@ -288,18 +277,14 @@
                 '  color: #000 !important;',
                 '}'
             ].join('\n'),
-            apply: function () {
-                startObserving();
-                addUpcomingBadges();
-            }
+            apply: function () { startObserving(); }
         },
 
         // ------------------------------------------------------------
-        // КОЛОДА КАРТ — веер карт, вытягивается на фокусе
+        // КОЛОДА КАРТ — карточки выглядят как игральные карты
         // ------------------------------------------------------------
         deckofcards: {
             title: 'Колода карт',
-            hint: 'Карточки-карты веером, фокус вытягивает наверх',
             css: [
 
                 /* ---- ФОН ---- */
@@ -309,67 +294,43 @@
                 '  background: radial-gradient(ellipse at 50% 100%, #0a4d0a 0%, #052005 60%, #000 100%) !important;',
                 '  background-image: radial-gradient(ellipse at 50% 100%, #0a4d0a 0%, #052005 60%, #000 100%) !important;',
                 '}',
-                'body[data-layout="deckofcards"] .background::after,',
-                'body[data-layout="deckofcards"] .background::before {',
-                '  content: none !important;',
-                '  background: none !important;',
-                '}',
-
-                /* ---- КОНТЕЙНЕР ---- */
-                'body[data-layout="deckofcards"] [data-cards-container] {',
-                '  display: flex !important;',
-                '  flex-wrap: nowrap !important;',
-                '  padding: 3.4em 3em !important;',
-                '  overflow-x: auto !important;',
-                '  overflow-y: visible !important;',
-                '  align-items: center !important;',
-                '  background: transparent !important;',
-                '  scrollbar-width: none !important;',
-                '}',
-                'body[data-layout="deckofcards"] [data-cards-container]::-webkit-scrollbar {',
-                '  display: none !important;',
-                '}',
 
                 /* ---- КАРТА ---- */
-                'body[data-layout="deckofcards"] .card {',
-                '  flex: 0 0 auto !important;',
-                '  width: 11em !important;',
-                '  height: 16.5em !important;',
-                '  aspect-ratio: unset !important;',
-                '  padding: .5em .5em 2em !important;',
+                'body[data-layout="deckofcards"] [' + FILM_ATTR + '] {',
                 '  background: #fffdf5 !important;',
                 '  border: 2px solid #1a1a1a !important;',
                 '  border-radius: 9px !important;',
+                '  padding: .5em .5em 2em !important;',
                 '  box-shadow: 4px 4px 0 rgba(0,0,0,.45), 6px 8px 14px rgba(0,0,0,.35) !important;',
-                '  margin-right: -5em !important;',
                 '  transform: rotate(2deg) !important;',
-                '  transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s ease, z-index 0s !important;',
+                '  transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s ease !important;',
                 '  position: relative !important;',
-                '  z-index: 1 !important;',
+                '  overflow: hidden !important;',
+                '  aspect-ratio: unset !important;',
                 '}',
 
-                'body[data-layout="deckofcards"] .card:nth-child(even) {',
-                '  transform: rotate(-1.8deg) translateY(.9em) !important;',
+                'body[data-layout="deckofcards"] [' + FILM_ATTR + ']:nth-child(even) {',
+                '  transform: rotate(-2deg) !important;',
                 '}',
-                'body[data-layout="deckofcards"] .card:nth-child(3n) {',
-                '  transform: rotate(1.5deg) translateY(-.5em) !important;',
-                '}',
-
-                'body[data-layout="deckofcards"] .card.focus {',
-                '  transform: rotate(0deg) translateY(-1.6em) scale(1.1) !important;',
-                '  z-index: 20 !important;',
-                '  margin-right: -3em !important;',
-                '  box-shadow: 8px 8px 0 rgba(0,0,0,.55), 16px 20px 32px rgba(0,0,0,.55), 0 0 0 3px #f5c518 !important;',
+                'body[data-layout="deckofcards"] [' + FILM_ATTR + ']:nth-child(3n) {',
+                '  transform: rotate(1.5deg) !important;',
                 '}',
 
-                'body[data-layout="deckofcards"] .card img {',
+                'body[data-layout="deckofcards"] [' + FILM_ATTR + '].focus {',
+                '  transform: rotate(0) scale(1.08) !important;',
+                '  z-index: 10 !important;',
+                '  box-shadow: 6px 8px 0 rgba(0,0,0,.55), 12px 16px 32px rgba(0,0,0,.55), 0 0 0 3px #f5c518 !important;',
+                '}',
+
+                'body[data-layout="deckofcards"] [' + FILM_ATTR + '] img {',
                 '  width: 100% !important;',
-                '  height: 100% !important;',
+                '  height: auto !important;',
                 '  object-fit: cover !important;',
                 '  border-radius: 5px !important;',
+                '  display: block !important;',
                 '}',
 
-                'body[data-layout="deckofcards"] .card__title {',
+                'body[data-layout="deckofcards"] [' + FILM_ATTR + '] .card__title {',
                 '  position: absolute !important;',
                 '  bottom: .3em !important;',
                 '  left: 0 !important;',
@@ -396,16 +357,14 @@
                 '  color: #052005 !important;',
                 '}'
             ].join('\n'),
-            apply: function () {
-                startObserving();
-            }
+            apply: function () { startObserving(); }
         }
     };
 
     var THEME_ORDER = ['classic', 'filmstrip', 'deckofcards'];
 
     // ================================================================
-    //  ПРИМЕНЕНИЕ / СБРОС
+    //  ПРИМЕНЕНИЕ
     // ================================================================
 
     function currentThemeName() {
@@ -415,20 +374,12 @@
     function clearPrevious() {
         stopObserving();
         clearBadges();
+        untagFilmCards();
 
         var old = document.getElementById(STYLE_ID);
         if (old && old.parentNode) old.parentNode.removeChild(old);
 
-        // Отвязываем атрибут контейнеров, чтобы чужие селекторы не срабатывали
-        var tagged = document.querySelectorAll('[' + CARD_ATTR + ']');
-        for (var i = 0; i < tagged.length; i++) tagged[i].removeAttribute(CARD_ATTR);
-
-        // Чистим inline-стили фона
         clearBgInline();
-
-        // Убираем временный кейфрейм, если был
-        var oldKf = document.getElementById('theme_layout_kf');
-        if (oldKf && oldKf.parentNode) oldKf.parentNode.removeChild(oldKf);
     }
 
     function applyTheme(name) {
@@ -458,8 +409,8 @@
             document.head.appendChild(style);
         }
 
-        // Тэгируем контейнеры ДО применения apply()
-        tagContainers();
+        // Сначала помечаем карточки, потом вызываем apply
+        tagFilmCards();
 
         if (typeof theme.apply === 'function') {
             try { theme.apply(); }
@@ -523,7 +474,6 @@
                 if (e.name === STORAGE_KEY) applyTheme(e.value || 'classic');
             });
 
-            // Пере-применяем при заходе в новую активность
             Lampa.Listener.follow('activity', function (e) {
                 if (e.type !== 'start') return;
                 var n = currentThemeName();
@@ -533,13 +483,12 @@
                 }, 80);
             });
 
-            // Периодически перепроверяем фон (Lampa может менять его на лету)
             setInterval(function () {
                 if (currentTheme !== 'classic') clearBgInline();
             }, 1500);
 
             applyTheme(currentThemeName());
-            console.log('ThemeLayout v4', 'loaded, current:', currentThemeName());
+            console.log('ThemeLayout v5', 'loaded, current:', currentThemeName());
         }
 
         if (window.appready) addPlugin();
