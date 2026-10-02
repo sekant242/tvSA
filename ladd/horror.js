@@ -1,9 +1,9 @@
 /**
- * Horror plugin for Lampa (v8)
- * - Строки: Рекомендации / Кино / Сериалы / Аниме
- * - Desktop: список 55% + обзор справа
- * - Mobile:  список 100% + компактная панель над .navigation-bar
- * - Убраны большие отступы между строками внутри .horror-page
+ * Horror plugin for Lampa (v9)
+ * - Строки: Рекомендации / Кино / Сериалы / Аниме (стандартные строки Lampa)
+ * - Панель обзора появляется ТОЛЬКО на мобильной версии, снизу экрана,
+ *   над .navigation-bar.
+ * - Всё остальное — как обычная страница категории.
  */
 (function () {
     'use strict';
@@ -85,7 +85,11 @@
         });
     }
 
-    /* ─── Панель обзора ─── */
+    /* ─── Компонент ─── */
+
+    function isMobile() {
+        return window.innerWidth <= 768;
+    }
 
     function HorrorComponent(object) {
         var comp      = Lampa.Maker.make('Main', object);
@@ -137,18 +141,19 @@
             backdropWrap.style.display = backdropSrc ? 'block' : 'none';
         }
 
-        function recalcNavOffset() {
+        function recalcOffsets() {
             if (!previewEl) return;
             var nav = document.querySelector('.navigation-bar');
-            var navH = nav ? Math.round(nav.getBoundingClientRect().height) : 0;
+            var navH = nav && isMobile() ? Math.round(nav.getBoundingClientRect().height) : 0;
             previewEl.style.setProperty('--horror-nav', navH + 'px');
 
-            var panelH = Math.round(previewEl.getBoundingClientRect().height) || 0;
+            var panelH = isMobile() ? (Math.round(previewEl.getBoundingClientRect().height) || 0) : 0;
             var html = previewEl.closest('.horror-page');
             if (html) html.style.setProperty('--horror-panel-h', panelH + 'px');
         }
 
         comp.use({
+            /* 4 стандартные строки */
             onCreate: function () {
                 var lines = [], total = 4, loaded = 0;
                 function done() {
@@ -181,13 +186,17 @@
                 }, function (d) { if (d.results.length) { d.title = 'Аниме'; lines.push(d); } done(); });
             },
 
+            /* Фокус на карточке — обновляем панель */
             onInstance: function (line) {
                 line.use({
                     onActive: function (item, card_data) { updatePreview(card_data); }
                 });
             },
 
+            /* Панель только для мобильной версии */
             onBuild: function (data) {
+                if (!isMobile()) return;
+
                 var html = this.render(true);
                 html.classList.add('horror-page');
 
@@ -200,17 +209,17 @@
                 if (first) updatePreview(first);
 
                 requestAnimationFrame(function () {
-                    recalcNavOffset();
-                    setTimeout(recalcNavOffset, 300);
+                    recalcOffsets();
+                    setTimeout(recalcOffsets, 300);
                 });
-                window.addEventListener('resize', recalcNavOffset);
+                window.addEventListener('resize', recalcOffsets);
                 window.addEventListener('orientationchange', function () {
-                    setTimeout(recalcNavOffset, 300);
+                    setTimeout(recalcOffsets, 300);
                 });
             },
 
             onDestroy: function () {
-                window.removeEventListener('resize', recalcNavOffset);
+                window.removeEventListener('resize', recalcOffsets);
             }
         });
 
@@ -232,128 +241,27 @@
         );
     }
 
-    /* ─── Стили ─── */
+    /* ─── Стили: только панель, только мобильные ─── */
 
     function injectStyles() {
         if (document.getElementById('horror-plugin-styles')) return;
         var style = document.createElement('style');
         style.id = 'horror-plugin-styles';
         style.textContent = [
-
-            /* ═════ УБИРАЕМ ОТСТУПЫ МЕЖДУ СТРОКАМИ ═════ */
-            /* Отступы у .items-line в Lampa задаются через padding/margin — */
-            /* переопределяем только внутри .horror-page, чтобы не сломать остальное. */
-            '.horror-page .items-line {',
-            '    padding-top: 0 !important;',
-            '    padding-bottom: 0 !important;',
-            '    margin-top: 0 !important;',
-            '    margin-bottom: 0.5em !important;',
-            '}',
-
-            '.horror-page .items-line__body {',
-            '    padding-top: 0.3em !important;',
-            '    padding-bottom: 0.3em !important;',
-            '}',
-
-            /* Компактные заголовки строк */
-            '.horror-page .items-line__head {',
-            '    padding-top: 0.4em !important;',
-            '    padding-bottom: 0.4em !important;',
-            '    margin-bottom: 0 !important;',
-            '}',
-
-            '.horror-page .items-line__title {',
-            '    margin: 0 !important;',
-            '}',
-
-            /* Уменьшаем высоту карточек в строках */
-            '.horror-page .items-cards.mapping--line .card {',
-            '    margin-bottom: 0 !important;',
-            '}',
-
-            /* Отступы у самого скролла — компактнее сверху/снизу */
-            '.horror-page > .scroll .scroll__content {',
-            '    padding-top: 0.5em !important;',
-            '}',
-
-            /* ───── DESKTOP ───── */
-            '.horror-page { position: relative; }',
-            '.horror-page > .scroll { width: 55% !important; overflow: hidden; }',
-
-            '.horror-preview {',
-            '    --horror-nav: 0px;',
-            '    position: fixed;',
-            '    right: 0; top: 0;',
-            '    width: 45%;',
-            '    height: 100vh;',
-            '    padding: 7em 3em 3em 2em;',
-            '    box-sizing: border-box;',
-            '    display: flex;',
-            '    flex-direction: column;',
-            '    justify-content: center;',
-            '    pointer-events: none;',
-            '    z-index: 5;',
-            '    color: #fff;',
-            '}',
-
-            '.horror-preview__media {',
-            '    display: flex; gap: 1em;',
-            '    height: 15em; margin-bottom: 1.5em;',
-            '}',
-
-            '.horror-preview__poster-wrap {',
-            '    width: 10em; height: 100%;',
-            '    border-radius: 0.7em; overflow: hidden;',
-            '    background: rgba(255,255,255,0.06);',
-            '    box-shadow: 0 18px 50px rgba(0,0,0,0.65);',
-            '    flex: 0 0 auto;',
-            '}',
-
-            '.horror-preview__poster, .horror-preview__backdrop {',
-            '    width: 100%; height: 100%; object-fit: cover; display: block;',
-            '}',
-
-            '.horror-preview__backdrop-wrap {',
-            '    flex: 1; height: 100%;',
-            '    border-radius: 0.7em; overflow: hidden;',
-            '    background: rgba(255,255,255,0.06);',
-            '    box-shadow: 0 18px 50px rgba(0,0,0,0.65);',
-            '}',
-
-            '.horror-preview__title {',
-            '    font-size: 2em; font-weight: 700; line-height: 1.15;',
-            '    margin-bottom: 0.4em;',
-            '    text-shadow: 0 2px 20px rgba(0,0,0,0.75);',
-            '}',
-
-            '.horror-preview__meta {',
-            '    font-size: 0.95em; opacity: 0.78;',
-            '    margin-bottom: 1.1em;',
-            '    text-shadow: 0 2px 10px rgba(0,0,0,0.75);',
-            '}',
-
-            '.horror-preview__overview {',
-            '    font-size: 1.05em; line-height: 1.5; opacity: 0.9;',
-            '    max-height: 26vh; overflow: hidden;',
-            '    text-shadow: 0 2px 10px rgba(0,0,0,0.75);',
-            '}',
-
-            /* ───── MOBILE ───── */
             '@media (max-width: 768px) {',
 
-            '    .horror-page { --horror-panel-h: 0px; }',
-            '    .horror-page > .scroll { width: 100% !important; }',
-
+            /* Небольшой отступ снизу, чтобы последняя строка не пряталась под панелью */
             '    .horror-page > .scroll .scroll__content {',
-            '        padding-bottom: calc(var(--horror-panel-h, 34vh) + var(--horror-nav, 0px) + 1em) !important;',
+            '        padding-bottom: calc(var(--horror-panel-h, 30vh) + var(--horror-nav, 0px) + 1em) !important;',
             '    }',
 
+            /* Панель снизу, над .navigation-bar */
             '    .horror-preview {',
+            '        --horror-nav: 0px;',
             '        position: fixed;',
-            '        top: auto;',
             '        bottom: calc(var(--horror-nav, 0px) + 0.5em);',
             '        left: 0.5em; right: 0.5em;',
-            '        width: auto; height: auto;',
+            '        width: auto;',
             '        max-height: 34vh;',
             '        padding: 0.8em 0.9em 0.9em;',
             '        border-radius: 1em;',
@@ -367,19 +275,57 @@
             '        overflow: hidden;',
             '        z-index: 200;',
             '        color: #fff;',
+            '        pointer-events: none;',
             '    }',
 
-            '.horror-preview__media {',
-            '    height: 6em; margin: 0 0 0.5em 0; gap: 0.6em; flex-shrink: 0;',
+            '    .horror-preview__media {',
+            '        display: flex; gap: 0.6em;',
+            '        height: 6em; margin: 0 0 0.5em 0;',
+            '        flex-shrink: 0;',
+            '    }',
+
+            '    .horror-preview__poster-wrap {',
+            '        width: 4em; height: 100%;',
+            '        border-radius: 0.4em; overflow: hidden;',
+            '        background: rgba(255,255,255,0.06);',
+            '        flex: 0 0 auto;',
+            '    }',
+
+            '    .horror-preview__backdrop-wrap {',
+            '        flex: 1; height: 100%;',
+            '        border-radius: 0.4em; overflow: hidden;',
+            '        background: rgba(255,255,255,0.06);',
+            '    }',
+
+            '    .horror-preview__poster,',
+            '    .horror-preview__backdrop {',
+            '        width: 100%; height: 100%;',
+            '        object-fit: cover; display: block;',
+            '    }',
+
+            '    .horror-preview__title {',
+            '        font-size: 1.05em; font-weight: 700;',
+            '        line-height: 1.15; margin: 0 0 0.1em 0;',
+            '        flex-shrink: 0;',
+            '    }',
+
+            '    .horror-preview__meta {',
+            '        font-size: 0.75em; opacity: 0.78;',
+            '        margin: 0 0 0.4em 0;',
+            '        flex-shrink: 0;',
+            '    }',
+
+            '    .horror-preview__overview {',
+            '        font-size: 0.82em; line-height: 1.35;',
+            '        opacity: 0.9;',
+            '        max-height: 9vh; margin: 0; padding: 0;',
+            '        overflow: hidden;',
+            '    }',
             '}',
-            '.horror-preview__poster-wrap { width: 4em; border-radius: 0.4em; }',
-            '.horror-preview__backdrop-wrap { border-radius: 0.4em; }',
-            '.horror-preview__title { font-size: 1.05em; line-height: 1.15; margin: 0 0 0.1em 0; flex-shrink: 0; }',
-            '.horror-preview__meta { font-size: 0.75em; margin: 0 0 0.4em 0; flex-shrink: 0; }',
-            '.horror-preview__overview {',
-            '    font-size: 0.82em; line-height: 1.35; opacity: 0.9;',
-            '    max-height: 9vh; margin: 0; padding: 0; overflow: hidden;',
-            '}',
+
+            /* На десктопе панель полностью отключена */
+            '@media (min-width: 769px) {',
+            '    .horror-preview { display: none !important; }',
             '}'
         ].join('\n');
         document.head.appendChild(style);
