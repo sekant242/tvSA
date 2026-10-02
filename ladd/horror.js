@@ -1,46 +1,48 @@
 /**
- * Horror plugin for Lampa
- * Новая вкладка "Ужасы" в меню.
- * Внутри 3 строки: Рекомендации / Фильмы / Сериалы
- * Жанры: Ужасы (27) + Триллер (53)
+ * Horror plugin for Lampa (v2)
+ * Исправлено: для сериалов используются жанры Mystery + Sci-Fi & Fantasy,
+ *            т.к. на TMDB у TV нет жанров Horror/Thriller.
  */
 (function () {
     'use strict';
 
-    var HORROR   = 27;
-    var THRILLER = 53;
-    var GENRES_STR = HORROR + ',' + THRILLER;
+    /* ─── Жанры TMDB ───
+     * Для фильмов: 27 = Ужасы, 53 = Триллер
+     * Для сериалов: Horror/Thriller в TV-жанрах отсутствуют,
+     *   поэтому берём 9648 (Мистика) и 10765 (Фантастика и фэнтези) —
+     *   на TMDB хоррор-сериалы обычно помечены именно ими.
+     */
+    var MOVIE_GENRES = [27, 53];
+    var TV_GENRES    = [9648, 10765];
+
+    var MOVIE_GENRES_STR = MOVIE_GENRES.join('|'); // OR: Horror|Thriller
+    var TV_GENRES_STR    = TV_GENRES.join('|');    // OR: Mystery|Sci-Fi & Fantasy
 
     var COMPONENT  = 'horror_page';
     var MENU_TITLE = 'Ужасы';
 
-    /* ─────────────────────────────────────────────────────────
-     * Проверка, что карточка относится к ужасам или триллерам
-     * ───────────────────────────────────────────────────────── */
-    function hasHorrorGenre(card) {
-        if (!card) return false;
-        var ids = card.genre_ids ||
-            (card.genres ? card.genres.map(function (g) { return g.id; }) : []);
-        return ids.indexOf(HORROR) >= 0 || ids.indexOf(THRILLER) >= 0;
+    function genresFor(type) {
+        return type === 'tv' ? TV_GENRES : MOVIE_GENRES;
     }
 
-    function filterHorror(items) {
+    function filterHorror(items, type) {
         if (!items || !items.length) return [];
-        return items.filter(hasHorrorGenre);
+        var ids = genresFor(type);
+        return items.filter(function (card) {
+            var card_ids = card.genre_ids ||
+                (card.genres ? card.genres.map(function (g) { return g.id; }) : []);
+            for (var i = 0; i < ids.length; i++) {
+                if (card_ids.indexOf(ids[i]) >= 0) return true;
+            }
+            return false;
+        });
     }
 
-    /* ─────────────────────────────────────────────────────────
-     * Загрузка данных с TMDB через встроенный источник Lampa
-     * type        — 'movie' | 'tv'
-     * sort_by     — 'popularity.desc', 'vote_average.desc', ...
-     * extra       — дополнительные фильтры (напр. { 'vote_count.gte': 50 })
-     * cache_days  — срок жизни кэша в днях
-     * ───────────────────────────────────────────────────────── */
     function load(type, sort_by, extra, cache_days, callback) {
         var params = {
-            genres:   GENRES_STR,
-            sort_by:  sort_by,
-            page:     1
+            genres:  type === 'tv' ? TV_GENRES_STR : MOVIE_GENRES_STR,
+            sort_by: sort_by,
+            page:    1
         };
 
         if (extra) {
@@ -52,19 +54,18 @@
             'discover/' + type,
             params,
             function (json) {
-                if (json && json.results) json.results = filterHorror(json.results);
+                if (json && json.results) {
+                    json.results = filterHorror(json.results, type);
+                }
                 callback(json || { results: [] });
             },
             function () {
                 callback({ results: [] });
             },
-            { life: 60 * 24 * (cache_days || 3) } // кэш в днях
+            { life: 60 * 24 * (cache_days || 3) }
         );
     }
 
-    /* ─────────────────────────────────────────────────────────
-     * Сам компонент страницы "Ужасы"
-     * ───────────────────────────────────────────────────────── */
     function HorrorComponent(object) {
         var comp   = Lampa.Maker.make('Main', object);
         var lines  = [];
@@ -81,8 +82,7 @@
         comp.use({
             onCreate: function () {
 
-                /* ── Строка 1 — Рекомендации ──
-                   Топ по рейтингу среди ужасов/триллеров */
+                /* ── Строка 1 — Рекомендации ── */
                 load('movie', 'vote_average.desc',
                      { 'vote_count.gte': 1000 }, 7,
                      function (data) {
@@ -93,8 +93,7 @@
                          done();
                      });
 
-                /* ── Строка 2 — Фильмы ──
-                   Популярные фильмы ужасов/триллеров */
+                /* ── Строка 2 — Фильмы ── */
                 load('movie', 'popularity.desc',
                      { 'vote_count.gte': 50 }, 3,
                      function (data) {
@@ -105,8 +104,7 @@
                          done();
                      });
 
-                /* ── Строка 3 — Сериалы ──
-                   Популярные сериалы ужасов/триллеров */
+                /* ── Строка 3 — Сериалы ── */
                 load('tv', 'popularity.desc',
                      { 'vote_count.gte': 50 }, 3,
                      function (data) {
@@ -118,7 +116,6 @@
                      });
             },
 
-            /* Клик/фокус на карточке внутри строк */
             onInstance: function (line) {
                 line.use({
                     onInstance: function (card, card_data) {
@@ -136,9 +133,6 @@
         return comp;
     }
 
-    /* ─────────────────────────────────────────────────────────
-     * Кнопка в главном меню
-     * ───────────────────────────────────────────────────────── */
     function addMenuButton() {
         Lampa.Menu.addButton(
             '<svg><use xlink:href="#sprite-meta-fear"></use></svg>',
@@ -154,9 +148,6 @@
         );
     }
 
-    /* ─────────────────────────────────────────────────────────
-     * Запуск плагина
-     * ───────────────────────────────────────────────────────── */
     function start() {
         if (window.horror_plugin_started) return;
         window.horror_plugin_started = true;
@@ -167,11 +158,8 @@
         console.log('Horror plugin', 'started');
     }
 
-    if (window.appready) {
-        start();
-    } else {
-        Lampa.Listener.follow('app', function (e) {
-            if (e.type === 'ready') start();
-        });
-    }
+    if (window.appready) start();
+    else Lampa.Listener.follow('app', function (e) {
+        if (e.type === 'ready') start();
+    });
 })();
