@@ -1,71 +1,124 @@
 /**
- * Horror plugin for Lampa (v2)
- * Исправлено: для сериалов используются жанры Mystery + Sci-Fi & Fantasy,
- *            т.к. на TMDB у TV нет жанров Horror/Thriller.
+ * Horror plugin for Lampa (v3)
+ * Исправлено: вместо жанров используются keywords.
+ * Для фильмов — только жанр Horror (27), без триллеров.
+ * Для сериалов — keywords (horror, supernatural, slasher, zombie, vampire,
+ * ghost, demonic, exorcism, haunted house, found footage, monster, psychological horror).
  */
 (function () {
     'use strict';
 
-    /* ─── Жанры TMDB ───
-     * Для фильмов: 27 = Ужасы, 53 = Триллер
-     * Для сериалов: Horror/Thriller в TV-жанрах отсутствуют,
-     *   поэтому берём 9648 (Мистика) и 10765 (Фантастика и фэнтези) —
-     *   на TMDB хоррор-сериалы обычно помечены именно ими.
-     */
-    var MOVIE_GENRES = [27, 53];
-    var TV_GENRES    = [9648, 10765];
+    var COMPONENT   = 'horror_page';
+    var MENU_TITLE  = 'Ужасы';
 
-    var MOVIE_GENRES_STR = MOVIE_GENRES.join('|'); // OR: Horror|Thriller
-    var TV_GENRES_STR    = TV_GENRES.join('|');    // OR: Mystery|Sci-Fi & Fantasy
+    /* Keywords, которые будем использовать */
+    var KEYWORD_NAMES = [
+        'horror',
+        'supernatural',
+        'slasher',
+        'zombie',
+        'vampire',
+        'ghost',
+        'demonic',
+        'exorcism',
+        'haunted house',
+        'found footage',
+        'monster',
+        'psychological horror'
+    ];
 
-    var COMPONENT  = 'horror_page';
-    var MENU_TITLE = 'Ужасы';
+    var keywordIds = null; // заполнится при инициализации
 
-    function genresFor(type) {
-        return type === 'tv' ? TV_GENRES : MOVIE_GENRES;
+    /* ─────────────────────────────────────────────────────────
+     * Получить ID ключевого слова по имени (с кэшем)
+     * ───────────────────────────────────────────────────────── */
+    function getKeywordId(name, callback) {
+        var cacheKey = 'horror_kw_' + name.toLowerCase().replace(/\s+/g, '_');
+        var cached = Lampa.Storage.get(cacheKey, '');
+
+        if (cached) {
+            return callback(cached);
+        }
+
+        Lampa.Api.sources.tmdb.get('search/keyword', { query: name }, function (json) {
+            if (json.results && json.results.length) {
+                var id = String(json.results[0].id);
+                Lampa.Storage.set(cacheKey, id);
+                callback(id);
+            } else {
+                callback(null);
+            }
+        }, function () {
+            callback(null);
+        }, { life: 60 * 24 * 30 }); // кэш на 30 дней
     }
 
-    function filterHorror(items, type) {
-        if (!items || !items.length) return [];
-        var ids = genresFor(type);
-        return items.filter(function (card) {
-            var card_ids = card.genre_ids ||
-                (card.genres ? card.genres.map(function (g) { return g.id; }) : []);
-            for (var i = 0; i < ids.length; i++) {
-                if (card_ids.indexOf(ids[i]) >= 0) return true;
-            }
-            return false;
+    /* ─────────────────────────────────────────────────────────
+     * Собрать строку with_keywords (ID через |)
+     * ───────────────────────────────────────────────────────── */
+    function buildKeywordsString(callback) {
+        if (keywordIds) return callback(keywordIds);
+
+        var ids = [];
+        var pending = KEYWORD_NAMES.length;
+
+        KEYWORD_NAMES.forEach(function (name) {
+            getKeywordId(name, function (id) {
+                if (id) ids.push(id);
+                pending--;
+                if (pending === 0) {
+                    keywordIds = ids.join('|'); // OR: любое из ключевых слов
+                    callback(keywordIds);
+                }
+            });
         });
     }
 
+    /* ─────────────────────────────────────────────────────────
+     * Загрузка через discover с фильтрами
+     * ───────────────────────────────────────────────────────── */
     function load(type, sort_by, extra, cache_days, callback) {
-        var params = {
-            genres:  type === 'tv' ? TV_GENRES_STR : MOVIE_GENRES_STR,
-            sort_by: sort_by,
-            page:    1
-        };
+        buildKeywordsString(function (kwString) {
+            var params = {
+                sort_by: sort_by,
+                page: 1
+            };
 
-        if (extra) {
-            params.filter = {};
-            for (var k in extra) params.filter[k] = extra[k];
-        }
+            if (type === 'tv') {
+                // Для сериалов — только keywords (жанры Mystery/Sci-Fi не нужны)
+                params.filter = {
+                    with_keywords: kwString
+                };
+            } else {
+                // Для фильмов — жанр Horror (27) + keywords для точности
+                params.genres = '27'; // только ужасы
+                params.filter = {
+                    with_keywords: kwString
+                };
+            }
 
-        Lampa.Api.sources.tmdb.get(
-            'discover/' + type,
-            params,
-            function (json) {
-                if (json && json.results) {
-                    json.results = filterHorror(json.results, type);
-                }
-                callback(json || { results: [] });
-            },
-            function () {
-                callback({ results: [] });
-            },
-            { life: 60 * 24 * (cache_days || 3) }
-        );
+            if (extra) {
+                params.filter = params.filter || {};
+                for (var k in extra) params.filter[k] = extra[k];
+            }
+
+            Lampa.Api.sources.tmdb.get(
+                'discover/' + type,
+                params,
+                function (json) {
+                    callback(json || { results: [] });
+                },
+                function () {
+                    callback({ results: [] });
+                },
+                { life: 60 * 24 * (cache_days || 3) }
+            );
+        });
     }
 
+    /* ─────────────────────────────────────────────────────────
+     * Компонент страницы "Ужасы"
+     * ───────────────────────────────────────────────────────── */
     function HorrorComponent(object) {
         var comp   = Lampa.Maker.make('Main', object);
         var lines  = [];
@@ -82,7 +135,8 @@
         comp.use({
             onCreate: function () {
 
-                /* ── Строка 1 — Рекомендации ── */
+                /* ── Строка 1 — Рекомендации ──
+                   Топ по рейтингу среди ужасов */
                 load('movie', 'vote_average.desc',
                      { 'vote_count.gte': 1000 }, 7,
                      function (data) {
@@ -93,7 +147,8 @@
                          done();
                      });
 
-                /* ── Строка 2 — Фильмы ── */
+                /* ── Строка 2 — Фильмы ──
+                   Популярные фильмы ужасов (только жанр Horror + keywords) */
                 load('movie', 'popularity.desc',
                      { 'vote_count.gte': 50 }, 3,
                      function (data) {
@@ -104,7 +159,8 @@
                          done();
                      });
 
-                /* ── Строка 3 — Сериалы ── */
+                /* ── Строка 3 — Сериалы ──
+                   Популярные сериалы с хоррор-keywords */
                 load('tv', 'popularity.desc',
                      { 'vote_count.gte': 50 }, 3,
                      function (data) {
