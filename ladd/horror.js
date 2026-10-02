@@ -1,1017 +1,998 @@
-// horror.js — расширенная версия
-// https://github.com/sekant242/tvSA
-//
-// Что нового:
-//  · Поджанры (Слэшеры, Зомби, Вампиры, Призраки, Психологические, Found Footage)
-//  · Строки «Новинки», «В тренде», «Топ», «Рекомендации», «Фильмы», «Сериалы», «Аниме»
-//  · Настройки: рейтинг, год, аниме, скрытие просмотренного
-//  · Кнопка «Испугай меня» — случайный ужастик из топа
-//  · Прогрессивная загрузка (Promise.allSettled)
-//  · Глобальная дедупликация карточек между строками
-//  · Кнопка «Ещё» в строках
-//  · Мобильный layout с bottom-sheet превью
-//  · Кэш с инвалидацией, batch-резолв ключевых слов
-//  · Empty-state при ошибке TMDB
-//  · Полная локализация через Lampa.Lang
-//  · Все константы в CONFIG, весь ввод экранирован
-//
+/* ============================================================================
+ * Horror.js — расширенный плагин ужасов для Lampa
+ * v2.0 — с поджанрами, настройками, страшилкой и полной локализацией
+ * ==========================================================================*/
 (function () {
   'use strict';
 
-  // ════════════════════════════════════════════════════════════
-  // 1. DEBUG
-  // ════════════════════════════════════════════════════════════
-  const DEBUG = false;
-  const log  = (...a) => DEBUG && console.log('[Horror]', ...a);
-  const warn = (...a) => console.warn('[Horror]', ...a);
-
-  // ════════════════════════════════════════════════════════════
-  // 2. CONFIG — все магические числа тут
-  // ════════════════════════════════════════════════════════════
+  // ==========================================================================
+  // КОНФИГУРАЦИЯ
+  // ==========================================================================
   const CONFIG = {
-    cache: {
-      ns: 'horror_v2',              // меняем ns при смене схемы
-      ttl: {                        // в минутах
-        keywords:  60 * 24 * 30,    // 30 дней
-        recommend: 60 * 24 * 7,
-        movies:    60 * 24 * 3,
-        tv:        60 * 24 * 3,
-        anime:     60 * 24 * 3,
-        fresh:     60 * 24,
-        trending:  60 * 24,
-        top:       60 * 24 * 7,
-        subgenre:  60 * 24 * 3
-      }
+    cacheNs: 'horror_v2',
+    ttl: {
+      keywords: 60 * 24 * 30,
+      recommend: 60 * 24 * 7,
+      movies: 60 * 24 * 3,
+      tv: 60 * 24 * 3,
+      anime: 60 * 24 * 3,
+      fresh: 60 * 24,
+      trending: 60 * 12,
+      top: 60 * 24 * 3,
     },
     ratings: {
-      recommend: { min: 7,   votes: 1000 },
-      movies:    { votes: 500 },
-      tv:        { votes: 300 },
-      anime:     { votes: 200 },
-      fresh:     { votes: 50  },
-      top:       { min: 7,   votes: 500 },
-      subgenre:  { votes: 100 }
+      recommend: { min: 7.5, votes: 1000 },
+      movies: { votes: 500 },
+      tv: { votes: 300 },
+      anime: { votes: 200 },
+      fresh: { votes: 30 },
+      trending: { votes: 100 },
+      top: { min: 8, votes: 2000 },
     },
-    genre: { horror: 27, thriller: 53, animation: 16 },
-    row_size: 20,
-    // эндпоинт для «Испугай меня» — сколько случайных страниц перебирать
-    frighten: { max_page: 12, min_votes: 300, min_rating: 6 },
-    component:          'horror_page',
-    settings_component: 'horror_settings'
   };
 
-  const KEYWORDS = [
-    'horror', 'slasher', 'zombie', 'vampire', 'ghost',
-    'found footage', 'supernatural', 'psychological horror',
-    'possession', 'haunted house', 'monster'
-  ];
+  const DEBUG = false;
+  const log = (...a) => { if (DEBUG) console.log('[Horror]', ...a); };
+  const warn = (...a) => { if (DEBUG) console.warn('[Horror]', ...a); };
 
-  const SUBGENRES = [
-    { id: 'all',     key: 'horror_sub_all',     keywords: [] },
-    { id: 'slasher', key: 'horror_sub_slasher', keywords: ['slasher'] },
-    { id: 'zombie',  key: 'horror_sub_zombie',  keywords: ['zombie'] },
-    { id: 'vampire', key: 'horror_sub_vampire', keywords: ['vampire'] },
-    { id: 'ghost',   key: 'horror_sub_ghost',   keywords: ['ghost', 'haunted house'] },
-    { id: 'psycho',  key: 'horror_sub_psycho',  keywords: ['psychological horror'] },
-    { id: 'found',   key: 'horror_sub_found',   keywords: ['found footage'] }
-  ];
-
-  const SETTINGS_KEYS = {
-    min_rating:   'horror_min_rating',
-    year_filter:  'horror_year_filter',
-    show_anime:   'horror_show_anime',
-    hide_watched: 'horror_hide_watched'
-  };
-
-  // Значения настроек по умолчанию (если Params их не подтянул)
-  const SETTINGS_DEFAULTS = {
-    [SETTINGS_KEYS.min_rating]:   0,
-    [SETTINGS_KEYS.year_filter]:  'all',
-    [SETTINGS_KEYS.show_anime]:   true,
-    [SETTINGS_KEYS.hide_watched]: false
-  };
-
-  // ════════════════════════════════════════════════════════════
-  // 3. i18n — регистрация строк
-  // ════════════════════════════════════════════════════════════
+  // ==========================================================================
+  // ЛОКАЛИЗАЦИЯ
+  // ==========================================================================
   Lampa.Lang.add({
-    horror_title:               { ru: 'Ужасы',                        en: 'Horror',                        uk: 'Жахи' },
-    horror_sub_all:             { ru: 'Все',                          en: 'All',                           uk: 'Усі' },
-    horror_sub_slasher:         { ru: 'Слэшеры',                      en: 'Slashers',                      uk: 'Слешери' },
-    horror_sub_zombie:          { ru: 'Зомби',                        en: 'Zombies',                       uk: 'Зомбі' },
-    horror_sub_vampire:         { ru: 'Вампиры',                      en: 'Vampires',                      uk: 'Вампіри' },
-    horror_sub_ghost:           { ru: 'Призраки',                     en: 'Ghosts',                        uk: 'Привиди' },
-    horror_sub_psycho:          { ru: 'Психологические',              en: 'Psychological',                 uk: 'Психологічні' },
-    horror_sub_found:           { ru: 'Found Footage',                en: 'Found Footage',                 uk: 'Found Footage' },
-    horror_row_fresh:           { ru: 'Новинки ужасов',               en: 'Fresh Horror',                  uk: 'Нові жахи' },
-    horror_row_trending:        { ru: 'В тренде',                     en: 'Trending',                      uk: 'У тренді' },
-    horror_row_top:             { ru: 'В топе',                       en: 'Top rated',                     uk: 'У топі' },
-    horror_row_recommend:       { ru: 'Рекомендации',                 en: 'Recommended',                   uk: 'Рекомендації' },
-    horror_row_movies:          { ru: 'Фильмы ужасов',                en: 'Horror Movies',                 uk: 'Фільми жахів' },
-    horror_row_tv:              { ru: 'Сериалы ужасов',               en: 'Horror TV',                     uk: 'Серіали жахів' },
-    horror_row_anime:           { ru: 'Аниме ужасы',                  en: 'Horror Anime',                  uk: 'Аніме жахи' },
-    horror_frighten:            { ru: 'Испугай меня',                 en: 'Frighten me',                   uk: 'Налякай мене' },
-    horror_frighten_wait:       { ru: 'Подбираем ужастик...',         en: 'Picking a scare...',            uk: 'Підбираємо жах...' },
-    horror_frighten_fail:       { ru: 'Не получилось напугать 😢',    en: 'Failed to scare you 😢',        uk: 'Не вдалося налякати 😢' },
-    horror_error_network:       { ru: 'Не удалось загрузить. Проверьте соединение или включите прокси TMDB.', en: 'Failed to load. Check connection or enable TMDB proxy.', uk: 'Не вдалося завантажити. Перевірте з\'єднання.' },
-    horror_loading:             { ru: 'Загрузка...',                  en: 'Loading...',                    uk: 'Завантаження...' },
-    horror_settings:            { ru: 'Настройки ужасов',             en: 'Horror settings',               uk: 'Налаштування жахів' },
-    horror_set_min_rating:      { ru: 'Минимальный рейтинг',          en: 'Minimum rating',                uk: 'Мінімальний рейтинг' },
-    horror_set_min_rating_d:    { ru: 'Скрывать всё, что ниже',       en: 'Hide everything below',         uk: 'Приховати все нижче' },
-    horror_set_year:            { ru: 'Год выпуска',                  en: 'Year',                          uk: 'Рік' },
-    horror_set_year_all:        { ru: 'Любой',                        en: 'Any',                           uk: 'Будь-який' },
-    horror_set_year_fresh:      { ru: 'Только новинки',               en: 'Fresh only',                    uk: 'Тільки нові' },
-    horror_set_year_2000:       { ru: '2000-е и новее',               en: '2000s and newer',               uk: '2000-ті та новіше' },
-    horror_set_year_classic:    { ru: 'Классика до 2000',             en: 'Classic before 2000',           uk: 'Класика до 2000' },
-    horror_set_anime:           { ru: 'Показывать аниме',             en: 'Show anime',                    uk: 'Показувати аніме' },
-    horror_set_hide_watched:    { ru: 'Скрывать просмотренное',       en: 'Hide watched',                  uk: 'Приховати переглянуте' }
+    horror_title:        { ru: 'Ужасы', en: 'Horror', uk: 'Жахи', be: 'Жахі' },
+    horror_recommend:    { ru: 'Рекомендации', en: 'Recommended' },
+    horror_movies:       { ru: 'Фильмы', en: 'Movies' },
+    horror_tv:           { ru: 'Сериалы', en: 'TV Shows' },
+    horror_anime:        { ru: 'Аниме', en: 'Anime' },
+    horror_fresh:        { ru: 'Новинки', en: 'Fresh' },
+    horror_trending:     { ru: 'В тренде', en: 'Trending' },
+    horror_top:          { ru: 'Топ ужасов', en: 'Top horror' },
+    horror_continue:     { ru: 'Продолжить просмотр', en: 'Continue' },
+    horror_subgenres:    { ru: 'Поджанры', en: 'Subgenres' },
+    horror_frighten_me:  { ru: 'Испугай меня', en: 'Frighten me' },
+    horror_search:       { ru: 'Поиск ужасов', en: 'Search horror' },
+    horror_load_fail:    { ru: 'Не удалось загрузить. Проверьте соединение или включите TMDB Proxy.', en: 'Failed to load. Check connection or enable TMDB Proxy.' },
+    horror_empty:        { ru: 'Здесь пока пусто', en: 'Empty here' },
+    horror_no_frighten:  { ru: 'Не удалось подобрать фильм', en: 'Could not pick a movie' },
+    horror_frighten_hint:{ ru: 'Не двигайся…', en: "Don't move…" },
+    horror_frighten_open:{ ru: 'Открыть карточку', en: 'Open card' },
+    horror_frighten_again:{ ru: 'Ещё раз', en: 'Again' },
+    horror_sub_all:      { ru: 'Все', en: 'All' },
+    horror_sub_slasher:  { ru: 'Слэшеры', en: 'Slashers' },
+    horror_sub_zombie:   { ru: 'Зомби', en: 'Zombie' },
+    horror_sub_vampire:  { ru: 'Вампиры', en: 'Vampires' },
+    horror_sub_ghost:    { ru: 'Призраки', en: 'Ghosts' },
+    horror_sub_psycho:   { ru: 'Психологические', en: 'Psychological' },
+    horror_sub_mystic:   { ru: 'Мистика', en: 'Mystic' },
+    horror_sub_found:    { ru: 'Найденная плёнка', en: 'Found footage' },
+    horror_sub_demons:   { ru: 'Демоны', en: 'Demons' },
+    horror_sub_witches:  { ru: 'Ведьмы', en: 'Witches' },
+    horror_sub_monster:  { ru: 'Монстры', en: 'Monsters' },
+    horror_set_title:    { ru: 'Ужасы', en: 'Horror' },
+    horror_set_rating:   { ru: 'Минимальный рейтинг', en: 'Minimum rating' },
+    horror_set_year:     { ru: 'Год выпуска', en: 'Year' },
+    horror_set_year_any: { ru: 'Все', en: 'Any' },
+    horror_set_year_fresh:{ ru: 'Новинки', en: 'Recent' },
+    horror_set_year_2000:{ ru: '2000-е', en: '2000s' },
+    horror_set_year_classic:{ ru: 'Классика (до 2000)', en: 'Classic' },
+    horror_set_hide:     { ru: 'Скрывать просмотренное', en: 'Hide watched' },
+    horror_set_anime:    { ru: 'Показывать аниме', en: 'Show anime' },
   });
 
-  // ════════════════════════════════════════════════════════════
-  // 4. HELPERS
-  // ════════════════════════════════════════════════════════════
-  const esc = (s) => String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  const t = (key) => Lampa.Lang.translate(key);
 
-  function setting(key) {
-    if (typeof Lampa.Storage.field === 'function') {
-      const v = Lampa.Storage.field(key);
-      if (v !== '' && v !== undefined && v !== null) return v;
-    }
-    return Lampa.Storage.get(key, SETTINGS_DEFAULTS[key]);
+  // ==========================================================================
+  // ХЕЛПЕРЫ
+  // ==========================================================================
+  function escapeHTML(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
-  // Асинхронный ttl-кэш поверх Lampa.Cache
-  async function cached(ns_suffix, ttl_min, producer) {
-    const key = `${CONFIG.cache.ns}_${ns_suffix}`;
+  function getWatchedIds() {
+    // Собираем ID просмотренного из истории Lampa
     try {
-      const hit = await Lampa.Cache.getData('other', key, ttl_min, false);
-      if (hit) { log('cache hit', key); return hit; }
-    } catch (e) { /* промах — идём в сеть */ }
-
-    const fresh = await producer();
-    // не ждём записи — если упадёт, следующий вызов снова сходит в сеть
-    Lampa.Cache.rewriteData('other', key, fresh).catch(() => {});
-    return fresh;
+      const favorite = Lampa.Favorite.get({ type: 'history' }) || [];
+      return new Set(favorite.map((c) => c.id));
+    } catch (e) {
+      return new Set();
+    }
   }
 
-  // Обёртка над TMDB.get с промисами
-  function tmdb(method, params = {}, opts = {}) {
+  function isWatched(card) {
+    try {
+      if (Lampa.Favorite.check && card) {
+        const status = Lampa.Favorite.check(card);
+        return !!(status && (status.history || status.viewed));
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function isEnabled(name, def) {
+    const v = Lampa.Storage.get(name, def === undefined ? 'false' : def);
+    return v === true || v === 'true';
+  }
+
+  function getSetting(name, def) {
+    const v = Lampa.Storage.get(name, def);
+    return v === undefined || v === '' ? def : v;
+  }
+
+  // ==========================================================================
+  // БАЗА ID КЛЮЧЕВЫХ СЛОВ
+  // Стабильные ID из TMDB — экономят десятки запросов при первом запуске
+  // ==========================================================================
+  const KEYWORD_IDS = {
+    horror: 315058,
+    slasher: 12339,
+    zombie: 12377,
+    vampire: 3133,
+    ghost: 12392,
+    'found footage': 163053,
+    demon: 205554,
+    witch: 12565,
+    monster: 1299,
+    'psychological horror': 284303,
+    occult: 9320,
+    'supernatural': 6152,
+    'haunted house': 3405,
+    'possession': 11800,
+    'serial killer': 10714,
+    gore: 10292,
+    splatter: 10226,
+    'evil doll': 208456,
+    'folk horror': 220071,
+    cannibal: 10222,
+  };
+
+  // Дополнительные слова, ID которых могут быть нестабильными — подгружаются динамически
+  const EXTRA_KEYWORDS = ['cosmic horror', 'body horror', 'psychological thriller', 'satanic', 'exorcism'];
+
+  // ==========================================================================
+  // API-СЛОЙ
+  // ==========================================================================
+  const network = new Lampa.Reguest();
+  const seenIds = new Set(); // глобальный дедуп между строками
+
+  function dedupe(items) {
+    if (!Array.isArray(items)) return [];
+    const result = [];
+    for (const it of items) {
+      if (!it || !it.id) continue;
+      if (seenIds.has(it.id)) continue;
+      seenIds.add(it.id);
+      result.push(it);
+    }
+    return result;
+  }
+
+  function buildUrl(path, params) {
+    const parts = [];
+    for (const k in params) {
+      if (params[k] === undefined || params[k] === null) continue;
+      parts.push(`${k}=${encodeURIComponent(params[k])}`);
+    }
+    return path + (path.indexOf('?') === -1 ? '?' : '&') + parts.join('&');
+  }
+
+  function tmdbGet(path, params, ttl) {
+    const url = buildUrl(path, Object.assign({ api_key: Lampa.TMDB.key(), language: Lampa.Storage.field('tmdb_lang') || 'ru-RU' }, params || {}));
+    const cacheKey = CONFIG.cacheNs + ':' + url;
+
     return new Promise((resolve, reject) => {
-      Lampa.Api.sources.tmdb.get(
-        method,
-        params,
-        (data) => resolve(data),
-        () => reject(new Error('TMDB request failed: ' + method)),
-        opts.cache ? { life: opts.cache } : false
-      );
+      Lampa.Cache.getDataAnyCase('other', cacheKey, ttl).then((cached) => {
+        if (cached && cached.results) return resolve(cached);
+
+        network.silent(Lampa.TMDB.api(url), (json) => {
+          try { Lampa.Cache.rewriteData('other', cacheKey, json).catch(() => {}); } catch (e) {}
+          resolve(json);
+        }, (err) => reject(err), false, { timeout: 10000 });
+      }).catch(() => {
+        network.silent(Lampa.TMDB.api(url), resolve, reject, false, { timeout: 10000 });
+      });
     });
   }
 
-  function imgUrl(path, size) {
-    if (!path) return '';
-    if (/^https?:/i.test(path)) return path;
-    try { return Lampa.Api.img(path, size); } catch (e) { return ''; }
+  // ==========================================================================
+  // СБОРЩИКИ ЗАПРОСОВ
+  // ==========================================================================
+  function userRatingFilter() {
+    const min = parseFloat(getSetting('horror_min_rating', '0'));
+    return min > 0 ? { 'vote_average.gte': min } : {};
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 5. РЕЗОЛВ КЛЮЧЕВЫХ СЛОВ (batch + кэш 30 дней)
-  // ════════════════════════════════════════════════════════════
-  let KW_MAP = {};  // { 'zombie': 12377, ... }
-  let KW_READY = null;
-
-  async function resolveKeywords() {
-    if (KW_READY) return KW_READY;
-    KW_READY = (async () => {
-      // Сначала пробуем кэш
-      try {
-        const cachedMap = await Lampa.Cache.getData('other', CONFIG.cache.ns + '_kwmap', CONFIG.cache.ttl.keywords, false);
-        if (cachedMap && Object.keys(cachedMap).length) {
-          KW_MAP = cachedMap;
-          return KW_MAP;
-        }
-      } catch (e) {}
-
-      // Параллельный резолв, каждый — отдельный /search/keyword
-      const results = await Promise.allSettled(
-        KEYWORDS.map(word =>
-          tmdb('search/keyword', { query: word })
-            .then(res => ({ word, id: res.results?.[0]?.id || null }))
-            .catch(() => ({ word, id: null }))
-        )
-      );
-
-      results.forEach(r => {
-        if (r.status === 'fulfilled' && r.value.id) {
-          KW_MAP[r.value.word] = r.value.id;
-        }
-      });
-
-      log('keywords resolved', KW_MAP);
-      Lampa.Cache.rewriteData('other', CONFIG.cache.ns + '_kwmap', KW_MAP).catch(() => {});
-      return KW_MAP;
-    })();
-    return KW_READY;
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // 6. ПОСТРОЕНИЕ ЗАПРОСОВ
-  // ════════════════════════════════════════════════════════════
-  function yearFilterParams() {
-    const f = setting(SETTINGS_KEYS.year_filter);
+  function userYearFilter() {
+    const mode = getSetting('horror_year', 'any');
     const y = new Date().getFullYear();
-    if (f === 'fresh')   return { 'primary_release_date.gte': `${y - 1}-01-01` };
-    if (f === '2000')    return { 'primary_release_date.gte': '2000-01-01' };
-    if (f === 'classic') return { 'primary_release_date.lte': '2000-01-01' };
+    if (mode === 'fresh')   return { 'primary_release_date.gte': `${y - 1}-01-01` };
+    if (mode === '2000')    return { 'primary_release_date.gte': '2000-01-01', 'primary_release_date.lte': '2009-12-31' };
+    if (mode === 'classic') return { 'primary_release_date.lte': '1999-12-31' };
     return {};
   }
 
-  function ratingFilter(base) {
-    const min = Number(setting(SETTINGS_KEYS.min_rating)) || 0;
-    const out = { ...base };
-    if (min > 0) out['vote_average.gte'] = Math.max(min, base.min || 0);
-    delete out.min;
-    return out;
+  function mergeFilters(base, extra) {
+    return Object.assign({}, base, extra);
   }
 
-  function baseDiscoverParams(extra = {}) {
-    const p = {
-      with_genres: String(CONFIG.genre.horror),
-      include_adult: 'false',
+  // Фильтр по ключевому слову (для поджанров)
+  function keywordFilter(kw) {
+    const id = KEYWORD_IDS[kw];
+    return id ? { with_keywords: id } : {};
+  }
+
+  // Рекомендации
+  function loadRecommend() {
+    return tmdbGet('discover/movie', mergeFilters({
+      with_genres: '27,53',
+      sort_by: 'vote_average.desc',
+      'vote_average.gte': CONFIG.ratings.recommend.min,
+      'vote_count.gte': CONFIG.ratings.recommend.votes,
+      include_adult: false,
+    }, mergeFilters(userRatingFilter(), userYearFilter())), CONFIG.ttl.recommend)
+      .then((r) => ({ title: t('horror_recommend'), results: dedupe(r.results || []) }));
+  }
+
+  // Фильмы
+  function loadMovies() {
+    return tmdbGet('discover/movie', mergeFilters({
+      with_genres: '27',
       sort_by: 'popularity.desc',
-      ...yearFilterParams(),
-      ...extra
-    };
-    return ratingFilter(p);
+      'vote_count.gte': CONFIG.ratings.movies.votes,
+      include_adult: false,
+    }, mergeFilters(userRatingFilter(), userYearFilter())), CONFIG.ttl.movies)
+      .then((r) => ({ title: t('horror_movies'), results: dedupe(r.results || []) }));
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 7. ДЕДУПЛИКАЦИЯ
-  // ════════════════════════════════════════════════════════════
-  function makeDeduper() {
-    const seen = new Set();
-    return (items) => (items || []).filter(it => {
-      if (!it || it.id == null) return false;
-      if (seen.has(it.id)) return false;
-      seen.add(it.id);
-      return true;
-    });
+  // Сериалы (без жанра ужасов, т.к. TMDB их часто не помечает — фильтруем по ключевому слову)
+  function loadTV() {
+    return tmdbGet('discover/tv', mergeFilters({
+      with_keywords: KEYWORD_IDS.horror,
+      sort_by: 'popularity.desc',
+      'vote_count.gte': CONFIG.ratings.tv.votes,
+      include_adult: false,
+    }, mergeFilters(userRatingFilter(), userYearFilter())), CONFIG.ttl.tv)
+      .then((r) => ({ title: t('horror_tv'), results: dedupe(r.results || []) }));
   }
 
-  function filterWatched(items) {
-    if (!setting(SETTINGS_KEYS.hide_watched)) return items;
-    try {
-      return items.filter(it => {
-        const watched = Lampa.Timeline.watched?.(it);
-        // watched() возвращает число серий (для сериала) или процент (для фильма)
-        return !watched;
-      });
-    } catch (e) { return items; }
+  // Аниме
+  function loadAnime() {
+    if (!isEnabled('horror_show_anime', 'true')) return Promise.resolve(null);
+    return tmdbGet('discover/tv', {
+      with_genres: '16',
+      with_original_language: 'ja',
+      with_keywords: KEYWORD_IDS.horror,
+      sort_by: 'popularity.desc',
+      'vote_count.gte': CONFIG.ratings.anime.votes,
+      include_adult: false,
+    }, CONFIG.ttl.anime)
+      .then((r) => ({ title: t('horror_anime'), results: dedupe(r.results || []) }));
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 8. ЗАГРУЗЧИКИ СТРОК
-  // ════════════════════════════════════════════════════════════
-  const dedupe = makeDeduper();
-
-  function rowFresh() {
+  // Новинки
+  function loadFresh() {
     const y = new Date().getFullYear();
-    return cached('fresh', CONFIG.cache.ttl.fresh, () =>
-      tmdb('discover/movie', baseDiscoverParams({
-        'primary_release_date.gte': `${y - 1}-01-01`,
-        sort_by: 'primary_release_date.desc',
-        'vote_count.gte': CONFIG.ratings.fresh.votes
-      }))
-    ).then(d => d.results || []);
+    return tmdbGet('discover/movie', {
+      with_genres: '27',
+      sort_by: 'primary_release_date.desc',
+      'primary_release_date.gte': `${y - 1}-01-01`,
+      'vote_count.gte': CONFIG.ratings.fresh.votes,
+      include_adult: false,
+    }, CONFIG.ttl.fresh)
+      .then((r) => ({ title: t('horror_fresh'), results: dedupe(r.results || []) }));
   }
 
-  function rowTrending() {
-    return cached('trending', CONFIG.cache.ttl.trending, () =>
-      tmdb('trending/movie/week', {})
-    ).then(d => (d.results || []).filter(m => (m.genre_ids || []).includes(CONFIG.genre.horror)));
+  // Тренды
+  function loadTrending() {
+    return tmdbGet('trending/movie/week', {}, CONFIG.ttl.trending)
+      .then((r) => {
+        const filtered = (r.results || []).filter((it) => (it.genre_ids || []).indexOf(27) !== -1);
+        return { title: t('horror_trending'), results: dedupe(filtered) };
+      });
   }
 
-  function rowTop() {
-    return cached('top', CONFIG.cache.ttl.top, () =>
-      tmdb('discover/movie', baseDiscoverParams({
-        sort_by: 'vote_average.desc',
-        'vote_count.gte': CONFIG.ratings.top.votes,
-        'vote_average.gte': CONFIG.ratings.top.min
-      }))
-    ).then(d => d.results || []);
+  // Топ
+  function loadTop() {
+    return tmdbGet('discover/movie', mergeFilters({
+      with_genres: '27',
+      sort_by: 'vote_average.desc',
+      'vote_average.gte': CONFIG.ratings.top.min,
+      'vote_count.gte': CONFIG.ratings.top.votes,
+      include_adult: false,
+    }, userYearFilter()), CONFIG.ttl.top)
+      .then((r) => ({ title: t('horror_top'), results: dedupe(r.results || []) }));
   }
 
-  function rowRecommend() {
-    return cached('recommend', CONFIG.cache.ttl.recommend, () =>
-      tmdb('discover/movie', baseDiscoverParams({
-        with_genres: `${CONFIG.genre.horror},${CONFIG.genre.thriller}`,
-        sort_by: 'vote_average.desc',
-        'vote_count.gte': CONFIG.ratings.recommend.votes,
-        'vote_average.gte': CONFIG.ratings.recommend.min
-      }))
-    ).then(d => d.results || []);
-  }
-
-  function rowMovies() {
-    return cached('movies', CONFIG.cache.ttl.movies, () =>
-      tmdb('discover/movie', baseDiscoverParams({
-        sort_by: 'popularity.desc',
-        'vote_count.gte': CONFIG.ratings.movies.votes
-      }))
-    ).then(d => d.results || []);
-  }
-
-  function rowTv() {
-    return cached('tv', CONFIG.cache.ttl.tv, () =>
-      tmdb('discover/tv', {
-        with_genres: `${CONFIG.genre.horror},9648`,  // horror + mystery
-        sort_by: 'popularity.desc',
-        'vote_count.gte': CONFIG.ratings.tv.votes,
-        include_adult: 'false'
-      })
-    ).then(d => d.results || []);
-  }
-
-  function rowAnime() {
-    return cached('anime', CONFIG.cache.ttl.anime, () =>
-      tmdb('discover/tv', {
-        with_genres: String(CONFIG.genre.animation),
-        with_original_language: 'ja',
-        sort_by: 'popularity.desc',
-        'vote_count.gte': CONFIG.ratings.anime.votes
-      })
-    ).then(d => d.results || []);
-  }
-
-  function rowSubgenre(subId) {
-    const sg = SUBGENRES.find(s => s.id === subId);
-    if (!sg || !sg.keywords.length) return Promise.resolve([]);
-    const ids = sg.keywords.map(k => KW_MAP[k]).filter(Boolean);
-    if (!ids.length) return Promise.resolve([]);
-    const with_keywords = ids.join('|'); // OR
-    return cached(`sub_${subId}`, CONFIG.cache.ttl.subgenre, () =>
-      tmdb('discover/movie', baseDiscoverParams({
-        with_keywords,
-        sort_by: 'vote_average.desc',
-        'vote_count.gte': CONFIG.ratings.subgenre.votes
-      }))
-    ).then(d => d.results || []);
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // 9. «ИСПУГАЙ МЕНЯ» — случайный ужастик
-  // ════════════════════════════════════════════════════════════
-  async function frightenMe() {
-    Lampa.Noty.show(Lampa.Lang.translate('horror_frighten_wait'));
+  // Продолжить просмотр
+  function loadContinue() {
+    if (!isEnabled('horror_hide_watched', 'false')) {
+      // Не фильтруем — просто берём историю
+    }
     try {
-      const page = 1 + Math.floor(Math.random() * CONFIG.frighten.max_page);
-      const data = await tmdb('discover/movie', {
-        with_genres: String(CONFIG.genre.horror),
-        'vote_count.gte': CONFIG.frighten.min_votes,
-        'vote_average.gte': CONFIG.frighten.min_rating,
-        sort_by: 'popularity.desc',
-        include_adult: 'false',
-        page
-      });
+      const history = (Lampa.Favorite.get({ type: 'history' }) || []);
+      const horrorHistory = history.filter((c) => {
+        // Простая эвристика: жанр 27 или ключевое слово
+        return (c.genre_ids || []).indexOf(27) !== -1 || (c.genres || []).some((g) => g.id === 27);
+      }).slice(0, 15);
 
-      const pool = (data.results || []).filter(m => m.poster_path);
-      if (!pool.length) throw new Error('empty');
-
-      const pick = pool[Math.floor(Math.random() * pool.length)];
-      pick.source = 'tmdb';
-
-      // маленькая "страшилка" для атмосферы
-      try {
-        const svg = document.getElementById('sprites');
-        // просто открываем карточку
-      } catch (e) {}
-
-      Lampa.Router.call('full', pick);
+      if (!horrorHistory.length) return Promise.resolve(null);
+      return Promise.resolve({ title: t('horror_continue'), results: dedupe(horrorHistory) });
     } catch (e) {
-      warn('frightenMe failed', e);
-      Lampa.Noty.show(Lampa.Lang.translate('horror_frighten_fail'));
+      return Promise.resolve(null);
     }
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 10. CSS
-  // ════════════════════════════════════════════════════════════
-  (function injectCSS() {
-    const css = `
-      .horror-page { display:flex; height:100%; overflow:hidden; color:#fff; }
-      .horror-page__left { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; overflow:hidden; }
-
-      .horror-page__topbar {
-        display:flex; gap:.6em; padding:1em 1.2em .6em; align-items:center;
-        flex-wrap:wrap; flex:0 0 auto;
-      }
-      .horror-chip {
-        padding:.5em .9em; border-radius:2em;
-        background:rgba(255,255,255,.08); color:#fff;
-        font-size:.95em; line-height:1; white-space:nowrap;
-        transition:background .15s, transform .15s;
-      }
-      .horror-chip.focus, .horror-chip:hover { background:rgba(255,255,255,.22); }
-      .horror-chip--active { background:#c33 !important; }
-      .horror-chip--action { background:#5a1010; }
-      .horror-chip--action.focus { background:#a31919; }
-
-      .horror-page__rows {
-        flex:1 1 auto; overflow-y:auto; overflow-x:hidden;
-        padding-bottom:2em;
-        scroll-behavior:smooth;
-      }
-      .horror-page__rows::-webkit-scrollbar { width:6px; }
-      .horror-page__rows::-webkit-scrollbar-thumb { background:rgba(255,255,255,.15); border-radius:3px; }
-
-      .horror-row { margin-bottom:1.5em; }
-      .horror-row__head {
-        display:flex; align-items:center; justify-content:space-between;
-        padding:.4em 1.2em .6em;
-      }
-      .horror-row__title { font-size:1.15em; font-weight:500; opacity:.95; }
-      .horror-row__more {
-        font-size:.9em; padding:.4em .8em; border-radius:2em;
-        background:rgba(255,255,255,.08);
-      }
-      .horror-row__more.focus { background:rgba(255,255,255,.22); }
-
-      .horror-row__body {
-        display:flex; overflow-x:auto; overflow-y:hidden; gap:.6em;
-        padding:0 1.2em; scroll-behavior:smooth;
-      }
-      .horror-row__body::-webkit-scrollbar { height:0; }
-
-      .horror-card {
-        flex:0 0 auto; width:9.5em; cursor:pointer;
-        transition:transform .2s; position:relative;
-      }
-      .horror-card.focus { transform:translateY(-4px) scale(1.03); }
-      .horror-card.focus .horror-card__poster { box-shadow:0 0 0 3px #c33, 0 8px 20px rgba(0,0,0,.5); }
-      .horror-card__poster {
-        width:100%; aspect-ratio:2/3; border-radius:.5em; overflow:hidden;
-        background:rgba(255,255,255,.05); position:relative;
-        transition:box-shadow .2s;
-      }
-      .horror-card__poster img { width:100%; height:100%; object-fit:cover; display:block; }
-      .horror-card__vote {
-        position:absolute; top:.4em; left:.4em;
-        padding:.15em .5em; border-radius:.4em; background:rgba(0,0,0,.7);
-        font-size:.75em; color:#fc0; font-weight:600;
-      }
-      .horror-card__title {
-        margin-top:.35em; font-size:.85em; line-height:1.2;
-        display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
-        overflow:hidden; opacity:.9;
-      }
-
-      .horror-page__right {
-        flex:0 0 auto; width:min(38%, 520px);
-        background:rgba(0,0,0,.4); backdrop-filter:blur(24px);
-        overflow:hidden; position:relative; display:flex; flex-direction:column;
-        transition:transform .3s;
-      }
-      .horror-preview__backdrop {
-        position:absolute; inset:0; object-fit:cover;
-        opacity:.15; pointer-events:none; z-index:0;
-      }
-      .horror-preview__inner {
-        position:relative; z-index:1; padding:2em; overflow-y:auto; flex:1 1 auto;
-      }
-      .horror-preview__poster {
-        width:10em; border-radius:.5em; box-shadow:0 8px 30px rgba(0,0,0,.6);
-        margin-bottom:1.2em;
-      }
-      .horror-preview__title { font-size:1.8em; line-height:1.2; margin-bottom:.4em; }
-      .horror-preview__meta {
-        font-size:.95em; opacity:.75; margin-bottom:1em;
-        display:flex; gap:.8em; flex-wrap:wrap;
-      }
-      .horror-preview__meta span { display:flex; align-items:center; gap:.3em; }
-      .horror-preview__overview {
-        font-size:.98em; line-height:1.5; opacity:.85;
-        max-height:40vh; overflow-y:auto;
-      }
-      .horror-preview__empty {
-        opacity:.5; text-align:center; padding:4em 2em; font-size:1.1em;
-      }
-
-      .horror-empty {
-        padding:4em 2em; text-align:center; opacity:.75; font-size:1.05em;
-      }
-      .horror-empty__icon {
-        width:5em; height:5em; margin:0 auto 1em;
-        opacity:.35;
-      }
-
-      /* Mobile: превью как bottom-sheet */
-      @media (max-width: 768px) {
-        .horror-page { flex-direction:column; }
-        .horror-page__right {
-          position:fixed; left:0; right:0; bottom:0;
-          width:100%; height:50vh;
-          transform:translateY(100%);
-          border-top-left-radius:1em; border-top-right-radius:1em;
-          box-shadow:0 -10px 30px rgba(0,0,0,.6);
-          z-index:50;
-        }
-        .horror-page__right--visible { transform:translateY(0); }
-        .horror-preview__inner { padding:1.4em; }
-        .horror-preview__poster { display:none; }
-        .horror-preview__title { font-size:1.3em; }
-      }
-    `;
-    const s = document.createElement('style');
-    s.type = 'text/css';
-    s.textContent = css;
-    document.head.appendChild(s);
-  })();
-
-  // ════════════════════════════════════════════════════════════
-  // 11. КОМПОНЕНТ ГЛАВНОЙ СТРАНИЦЫ
-  // ════════════════════════════════════════════════════════════
-  function HorrorComponent(object) {
-    this.object = object || {};
-    this.html = null;
-    this.left = null;
-    this.rows = null;
-    this.right = null;
-    this.preview_inner = null;
-    this.destroyed = false;
-    this.last_focus = null;
-    this.current_subgenre = 'all';
-    this.row_nodes = [];       // { node, items, onMore }
-    this.topbar_focus_index = 0;
+  // Скрытие просмотренного
+  function applyWatchedFilter(rows) {
+    if (!isEnabled('horror_hide_watched', 'false')) return rows;
+    return rows.map((row) => {
+      if (!row) return row;
+      row.results = (row.results || []).filter((c) => !isWatched(c));
+      return row;
+    }).filter((row) => row && row.results && row.results.length);
   }
 
-  HorrorComponent.prototype.create = function () {
-    this.html = document.createElement('div');
-    this.html.className = 'horror-page';
-    this.html.innerHTML = `
-      <div class="horror-page__left">
-        <div class="horror-page__topbar"></div>
-        <div class="horror-page__rows"></div>
-      </div>
-      <div class="horror-page__right">
-        <div class="horror-preview__inner">
-          <div class="horror-preview__empty">${esc(Lampa.Lang.translate('horror_loading'))}</div>
-        </div>
-      </div>
-    `;
-    this.left = this.html.querySelector('.horror-page__left');
-    this.rows = this.html.querySelector('.horror-page__rows');
-    this.right = this.html.querySelector('.horror-page__right');
-    this.preview_inner = this.right.querySelector('.horror-preview__inner');
-    this.topbar = this.html.querySelector('.horror-page__topbar');
+  // ==========================================================================
+  // ПОДЖАНРЫ
+  // ==========================================================================
+  const SUBGENRES = [
+    { id: 'all',      titleKey: 'horror_sub_all',     kw: null },
+    { id: 'slasher',  titleKey: 'horror_sub_slasher', kw: 'slasher' },
+    { id: 'zombie',   titleKey: 'horror_sub_zombie',  kw: 'zombie' },
+    { id: 'vampire',  titleKey: 'horror_sub_vampire', kw: 'vampire' },
+    { id: 'ghost',    titleKey: 'horror_sub_ghost',   kw: 'ghost' },
+    { id: 'psycho',   titleKey: 'horror_sub_psycho',  kw: 'psychological horror' },
+    { id: 'mystic',   titleKey: 'horror_sub_mystic',  kw: 'supernatural' },
+    { id: 'found',    titleKey: 'horror_sub_found',   kw: 'found footage' },
+    { id: 'demons',   titleKey: 'horror_sub_demons',  kw: 'demon' },
+    { id: 'witches',  titleKey: 'horror_sub_witches', kw: 'witch' },
+    { id: 'monster',  titleKey: 'horror_sub_monster', kw: 'monster' },
+  ];
 
-    this.buildTopbar();
-  };
-
-  // ── 11.1 Верхняя панель: поджанры + действия ─────────────────
-  HorrorComponent.prototype.buildTopbar = function () {
-    this.topbar.innerHTML = '';
-
-    // Кнопка «Испугай меня» всегда первая
-    const frightenBtn = document.createElement('div');
-    frightenBtn.className = 'horror-chip horror-chip--action selector';
-    frightenBtn.textContent = Lampa.Lang.translate('horror_frighten');
-    frightenBtn.addEventListener('hover:enter', () => frightenMe());
-    this.topbar.appendChild(frightenBtn);
-
-    // Чипы поджанров
-    SUBGENRES.forEach(sg => {
-      const chip = document.createElement('div');
-      chip.className = 'horror-chip selector';
-      if (sg.id === this.current_subgenre) chip.classList.add('horror-chip--active');
-      chip.dataset.sg = sg.id;
-      chip.textContent = Lampa.Lang.translate(sg.key);
-      chip.addEventListener('hover:enter', () => this.switchSubgenre(sg.id));
-      chip.addEventListener('hover:focus', (e) => {
-        this.last_focus = e.currentTarget;
-        this.scrollFocusIntoView(e.currentTarget);
-      });
-      this.topbar.appendChild(chip);
+  function openSubgenre(sub) {
+    if (sub.id === 'all') {
+      openHorrorMain();
+      return;
+    }
+    const filter = Object.assign(
+      { with_genres: 27 },
+      keywordFilter(sub.kw),
+      userYearFilter(),
+      userRatingFilter()
+    );
+    Lampa.Activity.push({
+      url: 'discover/movie',
+      title: t(sub.titleKey),
+      component: 'category_full',
+      source: 'tmdb',
+      filter: filter,
+      page: 1,
     });
-  };
+  }
 
-  HorrorComponent.prototype.switchSubgenre = function (subId) {
-    if (this.destroyed) return;
-    this.current_subgenre = subId;
-    this.buildTopbar();
-    this.loadContent();
-  };
+  // ==========================================================================
+  // ИСПУГАЙ МЕНЯ
+  // ==========================================================================
+  function playScreech() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
 
-  // ── 11.2 Загрузка контента ───────────────────────────────────
-  HorrorComponent.prototype.loadContent = async function () {
-    if (this.destroyed) return;
+      osc1.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(1800, ctx.currentTime);
+      osc1.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.4);
+      osc1.frequency.exponentialRampToValueAtTime(2200, ctx.currentTime + 0.9);
 
-    // Индикатор загрузки
-    this.rows.innerHTML = `<div class="horror-empty">${esc(Lampa.Lang.translate('horror_loading'))}</div>`;
-    this.row_nodes = [];
+      osc2.type = 'square';
+      osc2.frequency.setValueAtTime(60, ctx.currentTime);
+      osc2.frequency.linearRampToValueAtTime(30, ctx.currentTime + 1.2);
 
-    // Резолвим ключевые слова, если нужен поджанр
-    if (this.current_subgenre !== 'all') {
-      await resolveKeywords();
+      filter.type = 'bandpass';
+      filter.frequency.value = 1200;
+      filter.Q.value = 8;
+
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.4);
+
+      osc1.connect(filter).connect(gain).connect(ctx.destination);
+      osc2.connect(gain);
+
+      osc1.start();
+      osc2.start();
+      osc1.stop(ctx.currentTime + 1.4);
+      osc2.stop(ctx.currentTime + 1.4);
+    } catch (e) {
+      warn('screech failed', e);
+    }
+  }
+
+  function frightenMe() {
+    const overlay = document.createElement('div');
+    overlay.className = 'horror-scare';
+    overlay.innerHTML = `
+      <div class="horror-scare__eyes">
+        <div class="horror-scare__eye"></div>
+        <div class="horror-scare__eye"></div>
+      </div>
+      <div class="horror-scare__text">${escapeHTML(t('horror_frighten_hint'))}</div>
+    `;
+    document.body.appendChild(overlay);
+
+    // Плавное появление чёрного фона
+    requestAnimationFrame(() => overlay.classList.add('active'));
+
+    // Этап 1: показать глаза
+    setTimeout(() => {
+      overlay.querySelector('.horror-scare__eyes').style.opacity = '1';
+    }, 2200);
+
+    // Этап 2: скрим + вспышка
+    setTimeout(() => {
+      playScreech();
+      overlay.classList.add('horror-scare--flash');
+      setTimeout(() => overlay.classList.remove('horror-scare--flash'), 90);
+    }, 4200);
+
+    // Этап 3: получить случайный фильм и показать варианты
+    setTimeout(async () => {
+      try {
+        const page = 1 + Math.floor(Math.random() * 5);
+        const res = await tmdbGet('discover/movie', {
+          with_genres: '27',
+          sort_by: 'vote_average.desc',
+          'vote_average.gte': 6.5,
+          'vote_count.gte': 300,
+          include_adult: false,
+          page: page,
+        }, 60 * 6);
+
+        const pool = (res.results || []).filter((c) => c.backdrop_path || c.poster_path);
+        if (!pool.length) throw new Error('empty pool');
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+
+        overlay.innerHTML = `
+          <div class="horror-scare__reveal">
+            <div class="horror-scare__poster" style="background-image:url(${escapeHTML(Lampa.TMDB.image('t/p/w500/' + (pick.poster_path || pick.backdrop_path)))});"></div>
+            <div class="horror-scare__title">${escapeHTML(pick.title || pick.name || '')}</div>
+            <div class="horror-scare__year">${escapeHTML((pick.release_date || '').slice(0, 4))} · ⭐ ${escapeHTML(String(pick.vote_average || 0))}</div>
+            <div class="horror-scare__actions">
+              <div class="horror-scare__btn horror-scare__btn--primary selector">${escapeHTML(t('horror_frighten_open'))}</div>
+              <div class="horror-scare__btn selector">${escapeHTML(t('horror_frighten_again'))}</div>
+            </div>
+          </div>
+        `;
+
+        const btns = overlay.querySelectorAll('.horror-scare__btn');
+        btns[0].addEventListener('hover:enter', () => {
+          closeScare(overlay);
+          setTimeout(() => {
+            Lampa.Router.call('full', {
+              id: pick.id,
+              source: 'tmdb',
+              card: pick,
+              method: pick.name ? 'tv' : 'movie',
+            });
+          }, 200);
+        });
+        btns[1].addEventListener('hover:enter', () => {
+          closeScare(overlay);
+          setTimeout(frightenMe, 300);
+        });
+
+        // Также закрытие по back
+        overlay._backHandler = () => closeScare(overlay);
+        Lampa.Controller.add('horror_scare', {
+          toggle: () => {
+            Lampa.Controller.collectionSet(overlay);
+            Lampa.Controller.collectionFocus(btns[0], overlay);
+          },
+          back: () => closeScare(overlay),
+          left: () => Lampa.Navigator.move('left'),
+          right: () => Lampa.Navigator.move('right'),
+          up: () => Lampa.Navigator.move('up'),
+          down: () => Lampa.Navigator.move('down'),
+        });
+        Lampa.Controller.toggle('horror_scare');
+      } catch (e) {
+        warn('frighten failed', e);
+        Lampa.Noty.show(t('horror_no_frighten'));
+        closeScare(overlay);
+      }
+    }, 4800);
+  }
+
+  function closeScare(overlay) {
+    overlay.classList.remove('active');
+    setTimeout(() => {
+      overlay.remove();
+      Lampa.Controller.toggle('content');
+    }, 400);
+  }
+
+  // ==========================================================================
+  // КОМПОНЕНТ "УЖАСЫ"
+  // ==========================================================================
+  const COMPONENT_NAME = 'horror_page';
+
+  class HorrorPage {
+    constructor(object) {
+      this.object = object || {};
+      this.params = this.object.params || {};
+      this.html = document.createElement('div');
+      this.html.className = 'horror-page';
+      this.rows = [];
+      this.rowInstances = [];
+      this.previewCard = null;
+      this.scroll = null;
+      this.lastFocused = null;
     }
 
-    if (this.destroyed) return;
+    create(body) {
+      this.buildLayout();
+      this.scroll = new Lampa.Scroll({ mask: true, over: true, step: 250 });
+      this.scroll.minus();
+      this.scroll.body(true).classList.add('horror-page__rows');
+      this.left.appendChild(this.scroll.render(true));
+      if (body && body[0]) body[0].appendChild(this.html);
+      this.loadData();
+    }
 
-    // Спека строк
-    const specs = this.current_subgenre === 'all'
-      ? [
-          { title: 'horror_row_fresh',     loader: rowFresh },
-          { title: 'horror_row_trending',  loader: rowTrending },
-          { title: 'horror_row_top',       loader: rowTop },
-          { title: 'horror_row_recommend', loader: rowRecommend },
-          { title: 'horror_row_movies',    loader: rowMovies },
-          { title: 'horror_row_tv',        loader: rowTv },
-          ...(setting(SETTINGS_KEYS.show_anime) ? [{ title: 'horror_row_anime', loader: rowAnime }] : [])
-        ]
-      : [
-          { title: SUBGENRES.find(s => s.id === this.current_subgenre)?.key || 'horror_title',
-            loader: () => rowSubgenre(this.current_subgenre) }
-        ];
+    buildLayout() {
+      // Управление (поджанры + испугай меня)
+      const controls = document.createElement('div');
+      controls.className = 'horror-page__controls';
 
-    // Прогрессивный рендер
-    this.rows.innerHTML = '';
-    let anySuccess = false;
+      SUBGENRES.forEach((sub) => {
+        const btn = document.createElement('div');
+        btn.className = 'horror-page__control selector';
+        btn.textContent = t(sub.titleKey);
+        btn.addEventListener('hover:enter', () => openSubgenre(sub));
+        btn.addEventListener('hover:focus', () => this.scroll.update(btn, true));
+        controls.appendChild(btn);
+      });
 
-    for (const spec of specs) {
-      if (this.destroyed) return;
-      const placeholder = document.createElement('div');
-      placeholder.className = 'horror-row';
-      placeholder.innerHTML = `
-        <div class="horror-row__head">
-          <div class="horror-row__title">${esc(Lampa.Lang.translate(spec.title))}</div>
-        </div>
-        <div class="horror-row__body">
-          <div class="horror-empty" style="padding:1.5em">${esc(Lampa.Lang.translate('horror_loading'))}</div>
+      const scareBtn = document.createElement('div');
+      scareBtn.className = 'horror-page__control horror-page__control--scare selector';
+      scareBtn.textContent = '💀 ' + t('horror_frighten_me');
+      scareBtn.addEventListener('hover:enter', frightenMe);
+      scareBtn.addEventListener('hover:focus', () => this.scroll.update(scareBtn, true));
+      controls.appendChild(scareBtn);
+
+      this.html.appendChild(controls);
+
+      // Тело: слева строки, справа превью
+      const body = document.createElement('div');
+      body.className = 'horror-page__body';
+
+      this.left = document.createElement('div');
+      this.left.className = 'horror-page__left';
+
+      this.right = document.createElement('div');
+      this.right.className = 'horror-page__right';
+      this.right.innerHTML = '<div class="horror-page__preview"></div>';
+
+      body.appendChild(this.left);
+      body.appendChild(this.right);
+      this.html.appendChild(body);
+    }
+
+    async loadData() {
+      seenIds.clear();
+      Lampa.Loading.start(() => {});
+      Lampa.Loading.setText(t('loading') + '...');
+
+      const loaders = [
+        loadRecommend(),
+        loadMovies(),
+        loadFresh(),
+        loadTrending(),
+        loadTop(),
+        loadTV(),
+        loadAnime(),
+        loadContinue(),
+      ];
+
+      const results = await Promise.allSettled(loaders);
+
+      const rows = results
+        .map((r) => (r.status === 'fulfilled' ? r.value : null))
+        .filter((r) => r && r.results && r.results.length);
+
+      const filtered = applyWatchedFilter(rows);
+
+      Lampa.Loading.stop();
+
+      if (!filtered.length) {
+        this.renderEmpty();
+      } else {
+        filtered.forEach((row) => this.renderRow(row));
+        setTimeout(() => Lampa.Layer.update(this.html), 100);
+      }
+    }
+
+    renderEmpty() {
+      const empty = new Lampa.Empty({
+        title: t('horror_empty'),
+        descr: t('horror_load_fail'),
+      });
+      this.html.appendChild(empty.render(true));
+    }
+
+    renderRow(row) {
+      const line = Lampa.Maker.make('Line', {
+        title: row.title,
+        results: row.results,
+        total_pages: Math.ceil((row.results.length || 0) / 20),
+        url: 'discover/movie',
+        params: {
+          module: Lampa.Maker.module('Line').except('MoreFirst'),
+          items: { view: 6 },
+          scroll: { horizontal: true, step: 320 },
+        },
+      });
+
+      // Синхронизация превью при фокусе
+      line.use({
+        onInstance: (cardInstance, data) => {
+          cardInstance.use({
+            onFocus: () => {
+              this.lastFocused = cardInstance;
+              this.updatePreview(data);
+              this.scroll.update(line.render(true));
+            },
+            onEnter: () => {
+              Lampa.Router.call('full', {
+                id: data.id,
+                source: 'tmdb',
+                card: data,
+                method: data.name ? 'tv' : 'movie',
+              });
+            },
+          });
+        },
+        onMore: () => {
+          Lampa.Activity.push({
+            url: 'discover/movie',
+            title: row.title,
+            component: 'category_full',
+            source: 'tmdb',
+            filter: { with_genres: 27 },
+            page: 2,
+          });
+        },
+      });
+
+      line.create();
+      this.scroll.append(line.render(true));
+      this.rowInstances.push(line);
+    }
+
+    updatePreview(card) {
+      if (!card) return;
+      this.previewCard = card;
+      const box = this.right.querySelector('.horror-page__preview');
+      const poster = card.poster_path ? Lampa.TMDB.image('t/p/w300/' + card.poster_path) : (card.img || '');
+      const backdrop = card.backdrop_path ? Lampa.TMDB.image('t/p/w780/' + card.backdrop_path) : poster;
+      const year = (card.release_date || card.first_air_date || '').slice(0, 4);
+      const rating = card.vote_average ? card.vote_average.toFixed(1) : '—';
+
+      box.innerHTML = `
+        <img class="horror-page__preview-img" src="${escapeHTML(backdrop)}" onerror="this.src='${escapeHTML(poster || './img/img_broken.svg')}'" />
+        <div class="horror-page__preview-body">
+          <div class="horror-page__preview-title">${escapeHTML(card.title || card.name || '')}</div>
+          <div class="horror-page__preview-meta">${escapeHTML(year)} · ⭐ ${escapeHTML(rating)}</div>
+          <div class="horror-page__preview-overview">${escapeHTML(card.overview || '')}</div>
         </div>
       `;
-      this.rows.appendChild(placeholder);
 
-      spec.loader()
-        .then(items => {
-          if (this.destroyed) return;
-          const clean = filterWatched(dedupe(items));
-          if (clean.length) {
-            anySuccess = true;
-            this.renderRow(placeholder, spec, clean);
-          } else {
-            placeholder.remove();
-          }
-        })
-        .catch(err => {
-          warn('row failed', spec.title, err);
-          placeholder.remove();
-        });
-    }
-
-    // Если вообще ничего не загрузилось — пустой экран
-    setTimeout(() => {
-      if (this.destroyed) return;
-      if (!anySuccess && !this.rows.querySelector('.horror-row')) {
-        this.showError();
+      // Фон страницы
+      if (backdrop && Lampa.Background) {
+        Lampa.Background.change(Lampa.TMDB.image('t/p/w300/' + (card.poster_path || card.backdrop_path)));
       }
-    }, 6000);
-  };
-
-  HorrorComponent.prototype.showError = function () {
-    if (this.rows.querySelector('.horror-empty--error')) return;
-    const box = document.createElement('div');
-    box.className = 'horror-empty horror-empty--error';
-    box.innerHTML = `
-      <div class="horror-empty__icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M12 8v4M12 16h.01"/>
-        </svg>
-      </div>
-      <div>${esc(Lampa.Lang.translate('horror_error_network'))}</div>
-    `;
-    this.rows.appendChild(box);
-  };
-
-  // ── 11.3 Рендер строки ───────────────────────────────────────
-  HorrorComponent.prototype.renderRow = function (rowNode, spec, items) {
-    const body = rowNode.querySelector('.horror-row__body');
-    body.innerHTML = '';
-
-    // Показываем не больше CONFIG.row_size
-    const visible = items.slice(0, CONFIG.row_size);
-
-    visible.forEach(movie => {
-      body.appendChild(this.buildCard(movie));
-    });
-
-    // Кнопка «Ещё» — открывает полный список в новом Activity
-    if (items.length >= CONFIG.row_size) {
-      const head = rowNode.querySelector('.horror-row__head');
-      const more = document.createElement('div');
-      more.className = 'horror-row__more selector';
-      more.textContent = Lampa.Lang.translate('more');
-      more.addEventListener('hover:enter', () => {
-        Lampa.Activity.push({
-          url: '',
-          title: Lampa.Lang.translate(spec.title),
-          component: 'category_full',
-          source: 'tmdb',
-          genres: CONFIG.genre.horror,
-          page: 1
-        });
-      });
-      more.addEventListener('hover:focus', () => { this.last_focus = more; });
-      head.appendChild(more);
     }
 
-    this.row_nodes.push({ node: rowNode, items, spec });
-  };
-
-  // ── 11.4 Карточка ────────────────────────────────────────────
-  HorrorComponent.prototype.buildCard = function (movie) {
-    const el = document.createElement('div');
-    el.className = 'horror-card selector';
-    const poster = imgUrl(movie.poster_path, 'w300') || './img/img_broken.svg';
-    const title  = movie.title || movie.name || '';
-    const vote   = movie.vote_average ? parseFloat(movie.vote_average).toFixed(1) : '';
-
-    el.innerHTML = `
-      <div class="horror-card__poster">
-        ${vote ? `<div class="horror-card__vote">★ ${esc(vote)}</div>` : ''}
-        <img src="${esc(poster)}" loading="lazy" onerror="this.src='./img/img_broken.svg'">
-      </div>
-      <div class="horror-card__title">${esc(title)}</div>
-    `;
-
-    el.addEventListener('hover:focus', () => {
-      this.last_focus = el;
-      this.showPreview(movie);
-      this.scrollFocusIntoView(el);
-    });
-
-    el.addEventListener('hover:touch', () => {
-      this.last_focus = el;
-      this.showPreview(movie, true);   // показать превью на мобиле
-    });
-
-    el.addEventListener('hover:enter', () => {
-      this.openCard(movie);
-    });
-
-    return el;
-  };
-
-  HorrorComponent.prototype.openCard = function (movie) {
-    const data = { ...movie, source: 'tmdb' };
-    Lampa.Router.call('full', data);
-  };
-
-  // ── 11.5 Превью ──────────────────────────────────────────────
-  HorrorComponent.prototype.showPreview = function (movie, mobile_open = false) {
-    if (!this.preview_inner) return;
-
-    const is_mobile = Lampa.Platform.screen('mobile');
-
-    const backdrop = imgUrl(movie.backdrop_path, 'w780');
-    const poster   = imgUrl(movie.poster_path, 'w342') || './img/img_broken.svg';
-    const title    = movie.title || movie.name || '';
-    const year     = (movie.release_date || movie.first_air_date || '').slice(0, 4);
-    const rating   = movie.vote_average ? parseFloat(movie.vote_average).toFixed(1) : '';
-    const votes    = movie.vote_count || 0;
-    const overview = movie.overview || '';
-    const genres   = (movie.genre_ids || []).map(id => {
-      // Небольшой маппинг самых частых жанров — не тянем TMDB ради этого
-      const g = { 27:'Ужасы', 53:'Триллер', 9648:'Детектив', 18:'Драма', 878:'Фантастика', 14:'Фэнтези' };
-      return g[id];
-    }).filter(Boolean);
-
-    this.preview_inner.innerHTML = `
-      ${backdrop ? `<img class="horror-preview__backdrop" src="${esc(backdrop)}" onerror="this.remove()">` : ''}
-      <img class="horror-preview__poster" src="${esc(poster)}" onerror="this.src='./img/img_broken.svg'">
-      <div class="horror-preview__title">${esc(title)}</div>
-      <div class="horror-preview__meta">
-        ${year ? `<span>${esc(year)}</span>` : ''}
-        ${rating ? `<span>★ ${esc(rating)} <small style="opacity:.6">(${votes})</small></span>` : ''}
-        ${genres.length ? `<span>${esc(genres.join(', '))}</span>` : ''}
-      </div>
-      <div class="horror-preview__overview">${esc(overview || Lampa.Lang.translate('full_notext'))}</div>
-    `;
-
-    // Мобильное превью — bottom sheet
-    if (is_mobile && mobile_open) {
-      this.right.classList.add('horror-page__right--visible');
-      // Скрываем через 3 секунды при бездействии
-      clearTimeout(this._preview_timer);
-      this._preview_timer = setTimeout(() => {
-        if (this.destroyed) return;
-        this.right.classList.remove('horror-page__right--visible');
-      }, 3500);
-    }
-  };
-
-  // ── 11.6 Скролл к элементу ───────────────────────────────────
-  HorrorComponent.prototype.scrollFocusIntoView = function (el) {
-    if (!el || !this.rows) return;
-    const rect = el.getBoundingClientRect();
-    const parent_rect = this.rows.getBoundingClientRect();
-    // Если элемент вне видимой области — подскроллить
-    if (rect.top < parent_rect.top || rect.bottom > parent_rect.bottom) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-    // Горизонтальный скролл внутри строки
-    const row_body = el.closest('.horror-row__body');
-    if (row_body) {
-      const r = el.getBoundingClientRect();
-      const rb = row_body.getBoundingClientRect();
-      if (r.left < rb.left) row_body.scrollLeft += r.left - rb.left - 20;
-      else if (r.right > rb.right) row_body.scrollLeft += r.right - rb.right + 20;
-    }
-  };
-
-  // ── 11.7 Жизненный цикл контроллера ──────────────────────────
-  HorrorComponent.prototype.start = function () {
-    const self = this;
-
-    // Регистрируем свой контроллер поверх стандартного content
-    Lampa.Controller.add('horror', {
-      invisible: true,
-      toggle: function () {
-        const all = Array.from(self.html.querySelectorAll('.selector'));
-        Lampa.Controller.collectionSet(self.html);
-        if (self.last_focus && self.last_focus.isConnected) {
-          Lampa.Controller.collectionFocus(self.last_focus, self.html);
-        } else {
-          Lampa.Controller.collectionFocus(all[0], self.html);
-        }
-      },
-      up: function () {
-        if (Lampa.Navigator && Lampa.Navigator.canmove('up')) Lampa.Navigator.move('up');
-        else if (self.rows) self.rows.scrollTop -= 100;
-      },
-      down: function () {
-        if (Lampa.Navigator && Lampa.Navigator.canmove('down')) Lampa.Navigator.move('down');
-        else if (self.rows) self.rows.scrollTop += 100;
-      },
-      left: function () {
-        if (Lampa.Navigator && Lampa.Navigator.canmove('left')) Lampa.Navigator.move('left');
-        else Lampa.Controller.toggle('menu');
-      },
-      right: function () {
-        if (Lampa.Navigator && Lampa.Navigator.canmove('right')) Lampa.Navigator.move('right');
-      },
-      back: function () {
-        Lampa.Activity.backward();
-      }
-    });
-
-    Lampa.Controller.toggle('horror');
-
-    // Загружаем контент
-    this.loadContent();
-  };
-
-  HorrorComponent.prototype.render = function (js) {
-    return js ? this.html : $(this.html);
-  };
-
-  HorrorComponent.prototype.destroy = function () {
-    this.destroyed = true;
-    clearTimeout(this._preview_timer);
-    if (this.html) this.html.remove();
-    this.html = null;
-  };
-
-  HorrorComponent.prototype.pause = function () {};
-  HorrorComponent.prototype.stop  = function () {};
-
-  // ════════════════════════════════════════════════════════════
-  // 12. РЕГИСТРАЦИЯ НАСТРОЕК
-  // ════════════════════════════════════════════════════════════
-  function registerSettings() {
-    // Инициализируем дефолты через Params (чтобы Storage.field работал)
-    Lampa.Params.trigger(SETTINGS_KEYS.show_anime, true);
-    Lampa.Params.trigger(SETTINGS_KEYS.hide_watched, false);
-    Lampa.Params.select(SETTINGS_KEYS.min_rating, {
-      '0': '0', '5': '5', '6': '6', '7': '7', '8': '8'
-    }, 0);
-    Lampa.Params.select(SETTINGS_KEYS.year_filter, {
-      'all':     'horror_set_year_all',
-      'fresh':   'horror_set_year_fresh',
-      '2000':    'horror_set_year_2000',
-      'classic': 'horror_set_year_classic'
-    }, 'all');
-
-    // Регистрируем компонент настроек
-    const icon = `<svg width="37" height="37" viewBox="0 0 37 37" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M18.5 2C9.4 2 2 9.4 2 18.5S9.4 35 18.5 35 35 27.6 35 18.5 27.6 2 18.5 2zm0 4c3.5 0 6.7 1.4 9 3.7l-4.3 4.3c-1.3-.8-2.9-1.3-4.7-1.3-4.7 0-8.5 3.8-8.5 8.5s3.8 8.5 8.5 8.5 8.5-3.8 8.5-8.5c0-1.8-.5-3.4-1.3-4.7l4.3-4.3c2.3 2.3 3.7 5.5 3.7 9" stroke="white" stroke-width="2"/>
-    </svg>`;
-
-    Lampa.SettingsApi.addComponent({
-      component: CONFIG.settings_component,
-      icon: icon,
-      name: Lampa.Lang.translate('horror_settings'),
-      after: 'more'
-    });
-
-    Lampa.SettingsApi.addParam({
-      component: CONFIG.settings_component,
-      param: {
-        name: SETTINGS_KEYS.min_rating,
-        type: 'select',
-        values: { '0': '0', '5': '5', '6': '6', '7': '7', '8': '8' },
-        default: 0
-      },
-      field: {
-        name: Lampa.Lang.translate('horror_set_min_rating'),
-        description: Lampa.Lang.translate('horror_set_min_rating_d')
-      }
-    });
-
-    Lampa.SettingsApi.addParam({
-      component: CONFIG.settings_component,
-      param: {
-        name: SETTINGS_KEYS.year_filter,
-        type: 'select',
-        values: {
-          'all':     'horror_set_year_all',
-          'fresh':   'horror_set_year_fresh',
-          '2000':    'horror_set_year_2000',
-          'classic': 'horror_set_year_classic'
+    start() {
+      Lampa.Controller.add('horror_page_ctrl', {
+        toggle: () => {
+          Lampa.Controller.collectionSet(this.html);
+          Lampa.Controller.collectionFocus(this.lastFocused ? this.lastFocused.render(true) : null, this.html);
         },
-        default: 'all'
-      },
-      field: { name: Lampa.Lang.translate('horror_set_year') }
-    });
-
-    Lampa.SettingsApi.addParam({
-      component: CONFIG.settings_component,
-      param: {
-        name: SETTINGS_KEYS.show_anime,
-        type: 'trigger',
-        default: true
-      },
-      field: { name: Lampa.Lang.translate('horror_set_anime') }
-    });
-
-    Lampa.SettingsApi.addParam({
-      component: CONFIG.settings_component,
-      param: {
-        name: SETTINGS_KEYS.hide_watched,
-        type: 'trigger',
-        default: false
-      },
-      field: { name: Lampa.Lang.translate('horror_set_hide_watched') }
-    });
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // 13. РЕГИСТРАЦИЯ В МЕНЮ LAMPA
-  // ════════════════════════════════════════════════════════════
-  function registerMenu() {
-    const icon = `<svg width="37" height="37" viewBox="0 0 37 37" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M18.5 3C9.9 3 3 9.9 3 18.5S9.9 34 18.5 34 34 27.1 34 18.5 27.1 3 18.5 3zm0 4c2.6 0 5 1 6.9 2.5L20 15c-.5-.1-.9-.2-1.5-.2-2.2 0-4 1.8-4 4s1.8 4 4 4 4-1.8 4-4c0-.5-.1-1-.2-1.4l5.5-5.4C29 13.5 30 15.9 30 18.5 30 24.9 24.9 30 18.5 30S7 24.9 7 18.5" stroke="white" stroke-width="2"/>
-    </svg>`;
-
-    // Кнопка в главном меню
-    Lampa.Menu.addButton(icon, Lampa.Lang.translate('horror_title'), function () {
-      Lampa.Activity.push({
-        url: '',
-        title: Lampa.Lang.translate('horror_title'),
-        component: CONFIG.component,
-        page: 1,
-        source: 'tmdb'
+        up: () => {
+          if (Lampa.Navigator.canmove('up')) Lampa.Navigator.move('up');
+          else Lampa.Controller.toggle('head');
+        },
+        down: () => {
+          if (Lampa.Navigator.canmove('down')) Lampa.Navigator.move('down');
+        },
+        left: () => {
+          if (Lampa.Navigator.canmove('left')) Lampa.Navigator.move('left');
+          else Lampa.Controller.toggle('menu');
+        },
+        right: () => {
+          if (Lampa.Navigator.canmove('right')) Lampa.Navigator.move('right');
+        },
+        back: () => Lampa.Activity.backward(),
       });
+      Lampa.Controller.toggle('horror_page_ctrl');
+    }
+
+    render(js) {
+      return js ? this.html : window.jQuery ? window.jQuery(this.html) : this.html;
+    }
+
+    destroy() {
+      try {
+        this.rowInstances.forEach((r) => r.destroy && r.destroy());
+      } catch (e) {}
+      try { this.scroll && this.scroll.destroy(); } catch (e) {}
+      this.html.remove();
+    }
+  }
+
+  Lampa.Component.add(COMPONENT_NAME, HorrorPage);
+
+  // ==========================================================================
+  // ОТКРЫТИЕ ГЛАВНОЙ СТРАНИЦЫ
+  // ==========================================================================
+  function openHorrorMain() {
+    Lampa.Activity.push({
+      url: '',
+      title: t('horror_title'),
+      component: COMPONENT_NAME,
+      page: 1,
     });
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 14. INIT
-  // ════════════════════════════════════════════════════════════
-  function init() {
-    // Регистрируем компонент активности
-    Lampa.Component.add(CONFIG.component, HorrorComponent);
+  // ==========================================================================
+  // НАСТРОЙКИ ПЛАГИНА
+  // ==========================================================================
+  function registerSettings() {
+    Lampa.SettingsApi.addComponent({
+      component: 'horror',
+      icon: `<svg width="39" height="39" viewBox="0 0 39 39" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M19.5 3C10.4 3 3 10.4 3 19.5S10.4 36 19.5 36 36 28.6 36 19.5 28.6 3 19.5 3z" stroke="white" stroke-width="3"/>
+        <circle cx="13.5" cy="17" r="3" fill="white"/>
+        <circle cx="25.5" cy="17" r="3" fill="white"/>
+        <path d="M11 27c2-3 5-4 8.5-4s6.5 1 8.5 4" stroke="white" stroke-width="3" stroke-linecap="round"/>
+      </svg>`,
+      name: t('horror_set_title'),
+      after: 'more',
+    });
 
-    // Регистрируем настройки
+    Lampa.SettingsApi.addParam({
+      component: 'horror',
+      param: { name: 'horror_min_rating', type: 'select', values: {
+        '0': '0', '5': '5', '6': '6', '6.5': '6.5', '7': '7', '7.5': '7.5', '8': '8',
+      }, default: '0' },
+      field: { name: t('horror_set_rating') },
+    });
+
+    Lampa.SettingsApi.addParam({
+      component: 'horror',
+      param: { name: 'horror_year', type: 'select', values: {
+        'any':     t('horror_set_year_any'),
+        'fresh':   t('horror_set_year_fresh'),
+        '2000':    t('horror_set_year_2000'),
+        'classic': t('horror_set_year_classic'),
+      }, default: 'any' },
+      field: { name: t('horror_set_year') },
+    });
+
+    Lampa.SettingsApi.addParam({
+      component: 'horror',
+      param: { name: 'horror_hide_watched', type: 'trigger', default: false },
+      field: { name: t('horror_set_hide') },
+    });
+
+    Lampa.SettingsApi.addParam({
+      component: 'horror',
+      param: { name: 'horror_show_anime', type: 'trigger', default: true },
+      field: { name: t('horror_set_anime') },
+    });
+  }
+
+  // ==========================================================================
+  // СТИЛИ
+  // ==========================================================================
+  function injectStyles() {
+    if (document.getElementById('horror-plugin-styles')) return;
+    const css = `
+      .horror-page { display: flex; flex-direction: column; height: 100%; width: 100%; }
+      .horror-page__controls {
+        display: flex; gap: .6em; padding: 1em 1.4em;
+        overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
+      }
+      .horror-page__controls::-webkit-scrollbar { display: none; }
+      .horror-page__control {
+        padding: .55em 1.15em; border-radius: 2em;
+        background: rgba(255,255,255,.08); white-space: nowrap;
+        font-size: .9em; transition: background .2s, transform .2s;
+        flex-shrink: 0;
+      }
+      .horror-page__control.focus, .horror-page__control:hover {
+        background: rgba(255,255,255,.22);
+      }
+      .horror-page__control--scare {
+        background: rgba(180,20,20,.35); font-weight: 600;
+      }
+      .horror-page__control--scare.focus {
+        background: rgba(230,30,30,.7);
+        box-shadow: 0 0 24px rgba(255,40,40,.6);
+      }
+      .horror-page__body {
+        display: flex; flex: 1; min-height: 0; gap: 1.5em;
+        padding: 0 1.4em 1.4em;
+      }
+      .horror-page__left { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+      .horror-page__right {
+        width: min(38%, 480px); flex-shrink: 0; overflow: hidden;
+      }
+      .horror-page__preview {
+        position: relative; border-radius: 1em; overflow: hidden;
+        background: rgba(0,0,0,.4); height: 100%;
+        display: flex; flex-direction: column;
+      }
+      .horror-page__preview-img {
+        width: 100%; aspect-ratio: 16/9; object-fit: cover;
+        max-height: 45%;
+      }
+      .horror-page__preview-body {
+        padding: 1.2em; overflow-y: auto; flex: 1;
+      }
+      .horror-page__preview-title {
+        font-size: 1.3em; font-weight: 600; margin-bottom: .3em;
+        line-height: 1.25;
+      }
+      .horror-page__preview-meta {
+        font-size: .85em; opacity: .6; margin-bottom: .8em;
+      }
+      .horror-page__preview-overview {
+        font-size: .95em; line-height: 1.5; opacity: .85;
+      }
+      @media (max-width: 768px) {
+        .horror-page__right { display: none; }
+        .horror-page__body { padding: 0 .6em .6em; }
+        .horror-page__controls { padding: .8em .6em; }
+      }
+
+      /* ---- Испугай меня ---- */
+      .horror-scare {
+        position: fixed; inset: 0; background: #000; z-index: 99999;
+        display: flex; align-items: center; justify-content: center;
+        flex-direction: column; opacity: 0;
+        transition: opacity .5s, background .05s;
+        pointer-events: none;
+      }
+      .horror-scare.active { opacity: 1; pointer-events: auto; }
+      .horror-scare--flash { background: #fff !important; }
+      .horror-scare__text {
+        color: #8b0000; font-size: 2.2em; font-weight: 100;
+        letter-spacing: .35em; text-transform: uppercase;
+        opacity: 0; transition: opacity 2s;
+        font-family: serif;
+      }
+      .horror-scare.active .horror-scare__text { opacity: .85; }
+      .horror-scare__eyes {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        display: flex; gap: 1.5em; opacity: 0;
+        transition: opacity 1.5s;
+      }
+      .horror-scare__eye {
+        width: 1.6em; height: 1.6em; border-radius: 50%;
+        background: #f00;
+        box-shadow: 0 0 2em #f00, 0 0 4em #900, 0 0 8em #500;
+        animation: horrorBlink 4s infinite;
+      }
+      @keyframes horrorBlink {
+        0%, 38%, 44%, 100% { opacity: 1; }
+        40%, 42% { opacity: 0; }
+      }
+      .horror-scare__reveal {
+        display: flex; flex-direction: column; align-items: center;
+        text-align: center; max-width: 500px; padding: 2em;
+        animation: horrorFadeIn .6s ease;
+      }
+      @keyframes horrorFadeIn {
+        from { opacity: 0; transform: scale(.9); }
+        to   { opacity: 1; transform: scale(1); }
+      }
+      .horror-scare__poster {
+        width: 220px; height: 330px;
+        background-size: cover; background-position: center;
+        border-radius: 1em; margin-bottom: 1.5em;
+        box-shadow: 0 0 40px rgba(200,0,0,.5);
+      }
+      .horror-scare__title {
+        color: #fff; font-size: 1.5em; font-weight: 600;
+        margin-bottom: .4em;
+      }
+      .horror-scare__year {
+        color: #aaa; font-size: .95em; margin-bottom: 1.5em;
+      }
+      .horror-scare__actions {
+        display: flex; gap: .8em; flex-wrap: wrap; justify-content: center;
+      }
+      .horror-scare__btn {
+        padding: .7em 1.6em; border-radius: 2em;
+        background: rgba(255,255,255,.1); color: #fff;
+        transition: background .2s, transform .2s;
+      }
+      .horror-scare__btn--primary {
+        background: rgba(200,30,30,.6);
+      }
+      .horror-scare__btn.focus, .horror-scare__btn:hover {
+        background: rgba(255,255,255,.3);
+        transform: scale(1.05);
+      }
+    `;
+    const style = document.createElement('style');
+    style.id = 'horror-plugin-styles';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  // ==========================================================================
+  // ИНИЦИАЛИЗАЦИЯ
+  // ==========================================================================
+  function init() {
+    injectStyles();
     registerSettings();
 
-    // Ждём готовности Lampa, чтобы меню уже было построено
-    const boot = () => {
-      try {
-        registerMenu();
-      } catch (e) {
-        warn('menu registration failed', e);
+    // Кнопка в главном меню
+    Lampa.Menu.addButton(
+      `<svg width="39" height="39" viewBox="0 0 39 39" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M19.5 3C10.4 3 3 10.4 3 19.5S10.4 36 19.5 36 36 28.6 36 19.5 28.6 3 19.5 3z" stroke="currentColor" stroke-width="3"/>
+        <circle cx="13.5" cy="17" r="3" fill="currentColor"/>
+        <circle cx="25.5" cy="17" r="3" fill="currentColor"/>
+        <path d="M11 27c2-3 5-4 8.5-4s6.5 1 8.5 4" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      </svg>`,
+      t('horror_title'),
+      openHorrorMain
+    );
+
+    // Добавляем источник поиска ужасов
+    try {
+      if (Lampa.Search && Lampa.Search.addSource) {
+        Lampa.Search.addSource({
+          title: t('horror_search'),
+          params: { lazy: true },
+          search: function (params, oncomplite) {
+            tmdbGet('search/movie', { query: decodeURIComponent(params.query), include_adult: false }, 60 * 3)
+              .then((r) => {
+                const filtered = (r.results || []).filter((c) => (c.genre_ids || []).indexOf(27) !== -1);
+                if (!filtered.length) return oncomplite([]);
+                oncomplite([{
+                  title: t('horror_search'),
+                  results: filtered,
+                  total: filtered.length,
+                  total_pages: 1,
+                }]);
+              })
+              .catch(() => oncomplite([]));
+          },
+          onCancel: () => { try { network.clear(); } catch (e) {} },
+        });
       }
+    } catch (e) {}
 
-      // Прогреваем ключевые слова в фоне (не блокируя UI)
-      setTimeout(() => resolveKeywords().catch(() => {}), 3000);
-    };
-
-    if (window.appready) boot();
-    else Lampa.Listener.follow('app', (e) => { if (e.type === 'ready') boot(); });
+    log('initialized');
   }
 
+  // Запуск
   if (window.appready) init();
-  else Lampa.Listener.follow('app', (e) => { if (e.type === 'ready') init(); });
-
+  else Lampa.Listener.follow('app', (e) => {
+    if (e.type === 'ready') init();
+  });
 })();
