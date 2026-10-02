@@ -1,268 +1,342 @@
 (function () {
-  'use strict';
+    'use strict';
 
-  // Защита от повторной загрузки
-  if (window.plugin_horror_hub_ready) return;
-  window.plugin_horror_hub_ready = true;
-
-  // ---------------------------------------------------------------------------
-  // 1. ВНЕДРЕНИЕ CSS (кровавые подтёки, крупные карточки, тёмная тема)
-  // ---------------------------------------------------------------------------
-  var style = document.createElement('style');
-  style.textContent = `
-    /* Контейнер страницы */
-    .horror-hub {
-      padding: 20px 0 40px;
-      background: #0a0a0a;
-      min-height: 100vh;
-    }
-    .horror-hub .items-line {
-      margin-bottom: 30px;
-    }
-    .horror-hub .items-line__head {
-      padding-left: 20px;
-      margin-bottom: 12px;
-    }
-    .horror-hub .items-line__title {
-      font-size: 1.6em;
-      font-weight: 700;
-      color: #cc0000;
-      text-shadow: 0 0 10px rgba(200, 0, 0, 0.6);
-      letter-spacing: 1px;
-      text-transform: uppercase;
-    }
-    /* Крупные карточки */
-    .horror-hub .card {
-      width: 220px;
-      min-width: 220px;
-      margin-right: 16px;
-      border-radius: 8px;
-      overflow: hidden;
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
-      position: relative;
-      background: #1a1a1a;
-    }
-    .horror-hub .card:hover {
-      transform: scale(1.05);
-      box-shadow: 0 0 25px rgba(200, 0, 0, 0.7);
-    }
-    /* Кровавые подтёки на постере */
-    .horror-hub .card__view::after {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background:
-        radial-gradient(ellipse at 20% 10%, rgba(180, 0, 0, 0.55) 0%, transparent 60%),
-        radial-gradient(ellipse at 80% 30%, rgba(140, 0, 0, 0.45) 0%, transparent 55%),
-        radial-gradient(ellipse at 50% 80%, rgba(120, 0, 0, 0.35) 0%, transparent 50%),
-        linear-gradient(180deg, transparent 0%, transparent 60%, rgba(80, 0, 0, 0.6) 100%);
-      pointer-events: none;
-      z-index: 2;
-      border-radius: 8px;
-      mix-blend-mode: multiply;
-    }
-    /* Усиление кровавого эффекта при наведении */
-    .horror-hub .card:hover .card__view::after {
-      background:
-        radial-gradient(ellipse at 20% 10%, rgba(220, 0, 0, 0.75) 0%, transparent 60%),
-        radial-gradient(ellipse at 80% 30%, rgba(180, 0, 0, 0.65) 0%, transparent 55%),
-        radial-gradient(ellipse at 50% 80%, rgba(160, 0, 0, 0.55) 0%, transparent 50%),
-        linear-gradient(180deg, transparent 0%, transparent 55%, rgba(100, 0, 0, 0.8) 100%);
-    }
-    /* Название фильма в карточке */
-    .horror-hub .card__title {
-      color: #e0e0e0;
-      font-size: 0.95em;
-      text-shadow: 0 1px 3px #000;
-    }
-    /* Заголовок самой страницы (в Activity) */
-    .horror-hub-header {
-      font-size: 2.2em;
-      color: #cc0000;
-      text-align: center;
-      padding: 20px 0 10px;
-      text-shadow: 0 0 20px rgba(200, 0, 0, 0.8);
-      letter-spacing: 3px;
-      font-weight: 900;
-    }
-  `;
-  document.head.appendChild(style);
-
-  // ---------------------------------------------------------------------------
-  // 2. ИКОНКА ДЛЯ БОКОВОГО МЕНЮ (череп)
-  // ---------------------------------------------------------------------------
-  var iconSvg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 2a8 8 0 0 0-8 8v4a4 4 0 0 0 4 4h1v2h6v-2h1a4 4 0 0 0 4-4v-4a8 8 0 0 0-8-8z"/>
-      <circle cx="9" cy="10" r="1.5" fill="currentColor"/>
-      <circle cx="15" cy="10" r="1.5" fill="currentColor"/>
-      <path d="M10 16v3M14 16v3"/>
-    </svg>
-  `;
-
-  // ---------------------------------------------------------------------------
-  // 3. ДОБАВЛЕНИЕ ПУНКТА В БОКОВОЕ МЕНЮ
-  // ---------------------------------------------------------------------------
-  function addMenuItem() {
-    if (typeof Lampa.Menu === 'undefined' || !Lampa.Menu.addButton) return;
-
-    Lampa.Menu.addButton({
-      icon: iconSvg,
-      title: 'Ужасы',
-      action: function () {
-        Lampa.Activity.push({
-          url: '',
-          title: 'Ужасы',
-          component: 'horror_hub',
-          page: 1,
-          // Передаём данные, которые компонент может использовать
-          data: {}
-        });
-      },
-      // Позиция: после «Сериалы» (можно подстроить под свою сборку)
-      position: 5
-    });
-  }
-
-  // ---------------------------------------------------------------------------
-  // 4. РЕГИСТРАЦИЯ КОМПОНЕНТА
-  // ---------------------------------------------------------------------------
-  function registerComponent() {
-    Lampa.Component.add('horror_hub', {
-      template: `
-        <div class="horror-hub">
-          <div class="horror-hub-header">УЖАСЫ</div>
-          <div class="items-line" id="horror-recommendations">
-            <div class="items-line__head">
-              <div class="items-line__title">Рекомендации (Ужасы + Триллер)</div>
-            </div>
-            <div class="items-line__body">
-              <div class="items-line__list"></div>
-            </div>
-          </div>
-          <div class="items-line" id="horror-movies">
-            <div class="items-line__head">
-              <div class="items-line__title">Фильмы ужасов</div>
-            </div>
-            <div class="items-line__body">
-              <div class="items-line__list"></div>
-            </div>
-          </div>
-          <div class="items-line" id="horror-tv">
-            <div class="items-line__head">
-              <div class="items-line__title">Сериалы ужасов</div>
-            </div>
-            <div class="items-line__body">
-              <div class="items-line__list"></div>
-            </div>
-          </div>
-        </div>
-      `,
-      data: function () {
-        return {};
-      },
-      mounted: function () {
-        var self = this;
-        // Запускаем загрузку данных после монтирования
-        setTimeout(function () {
-          loadContent(self);
-        }, 100);
-      }
-    });
-  }
-
-  // ---------------------------------------------------------------------------
-  // 5. ЗАГРУЗКА КОНТЕНТА ИЗ TMDB
-  // ---------------------------------------------------------------------------
-  var TMDB_API_KEY = '4ef0d7355d9ffb5151e987764708ce96'; // публичный ключ
-  var TMDB_BASE = 'https://api.themoviedb.org/3';
-  var IMG_BASE = 'https://image.tmdb.org/t/p/w300';
-
-  function loadContent(component) {
-    // 1. Рекомендации: фильмы + сериалы в жанрах ужасы (27) и триллер (53)
-    var discoverUrl = TMDB_BASE + '/discover/movie?api_key=' + TMDB_API_KEY +
-      '&with_genres=27,53&sort_by=popularity.desc&language=ru-RU&page=1';
-    fetchAndRender(discoverUrl, '#horror-recommendations .items-line__list', component);
-
-    // 2. Фильмы ужасов
-    var moviesUrl = TMDB_BASE + '/discover/movie?api_key=' + TMDB_API_KEY +
-      '&with_genres=27&sort_by=popularity.desc&language=ru-RU&page=1';
-    fetchAndRender(moviesUrl, '#horror-movies .items-line__list', component);
-
-    // 3. Сериалы ужасов
-    var tvUrl = TMDB_BASE + '/discover/tv?api_key=' + TMDB_API_KEY +
-      '&with_genres=27&sort_by=popularity.desc&language=ru-RU&page=1';
-    fetchAndRender(tvUrl, '#horror-tv .items-line__list', component);
-  }
-
-  function fetchAndRender(url, selector, component) {
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.onreadystatechange = function () {
-      if (xhr.readyState === 4) {
-        if (xhr.status === 200) {
-          try {
-            var data = JSON.parse(xhr.responseText);
-            var results = data.results || [];
-            var listEl = component.render().find(selector);
-            if (!listEl.length) return;
-            listEl.empty();
-            results.slice(0, 20).forEach(function (item) {
-              var card = createCard(item);
-              listEl.append(card);
-            });
-          } catch (e) {
-            console.error('Horror Hub: ошибка парсинга', e);
-          }
-        } else {
-          console.error('Horror Hub: запрос не удался', xhr.status);
+    // ============================================================
+    // 1. СТИЛИ (внедряются один раз при загрузке плагина)
+    // ============================================================
+    var style = document.createElement('style');
+    style.textContent = `
+        /* Отдельный блок в боковом меню */
+        .menu__item--horror {
+            margin-top: 12px;
+            border-top: 1px solid rgba(255, 0, 0, 0.4);
+            padding-top: 12px;
         }
-      }
-    };
-    xhr.send();
-  }
 
-  function createCard(item) {
-    var title = item.title || item.name || 'Без названия';
-    var poster = item.poster_path ? IMG_BASE + item.poster_path : '';
-    var cardHtml = `
-      <div class="card card--category">
-        <div class="card__view">
-          <img class="card__img" src="${poster}" alt="${title}" loading="lazy">
-        </div>
-        <div class="card__title">${title}</div>
-      </div>
+        /* Страница ужасов */
+        .horror-page {
+            background: #0a0a0a;
+            min-height: 100vh;
+            padding: 20px 0;
+            color: #e0e0e0;
+        }
+
+        .horror-page__title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #ff2a2a;
+            text-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+            padding: 0 20px 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* Крупные карточки с кровавыми подтёками */
+        .horror-card {
+            position: relative;
+            width: 260px;
+            min-width: 260px;
+            margin-right: 16px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #1a0000;
+            box-shadow: 0 8px 25px rgba(255, 0, 0, 0.3);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .horror-card:hover {
+            transform: scale(1.05);
+            box-shadow: 0 12px 35px rgba(255, 0, 0, 0.6);
+        }
+
+        .horror-card::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60%;
+            background: linear-gradient(
+                to top,
+                rgba(139, 0, 0, 0.9) 0%,
+                rgba(139, 0, 0, 0.4) 40%,
+                transparent 100%
+            );
+            pointer-events: none;
+        }
+
+        /* Кровавые подтёки */
+        .horror-card__blood {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 40'%3E%3Cpath d='M0 0 Q10 30 20 0 Q30 40 40 0 Q50 35 60 0 Q70 45 80 0 Q90 30 100 0 Q110 50 120 0 Q130 35 140 0 Q150 40 160 0 Q170 30 180 0 Q190 45 200 0 L200 40 L0 40 Z' fill='%238B0000' opacity='0.8'/%3E%3C/svg%3E") repeat-x;
+            background-size: 200px 40px;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        .horror-card__poster {
+            width: 100%;
+            height: 380px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .horror-card__info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px 14px 18px;
+            z-index: 3;
+        }
+
+        .horror-card__name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            text-shadow: 0 2px 8px #000;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .horror-card__year {
+            font-size: 13px;
+            color: #ff6b6b;
+            text-shadow: 0 1px 4px #000;
+        }
+
+        /* Ряды */
+        .horror-row {
+            margin-bottom: 28px;
+        }
+
+        .horror-row__title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ff4444;
+            padding: 0 20px 10px;
+            text-shadow: 0 0 6px rgba(255, 0, 0, 0.5);
+        }
+
+        .horror-row__scroll {
+            display: flex;
+            overflow-x: auto;
+            padding: 8px 20px 16px;
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .horror-row__scroll::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        .horror-row__scroll::-webkit-scrollbar-thumb {
+            background: #8B0000;
+            border-radius: 4px;
+        }
     `;
-    var $card = $(cardHtml);
-    // Клик по карточке — открываем полную информацию (стандартный механизм Lampa)
-    $card.on('hover:enter', function () {
-      Lampa.Activity.push({
-        url: '',
-        title: title,
-        component: 'full',
-        id: item.id,
-        type: item.media_type || (item.first_air_date ? 'tv' : 'movie'),
-        data: item
-      });
+    document.head.appendChild(style);
+
+    // ============================================================
+    // 2. ЗАГРУЗКА ДАННЫХ (TMDB через API Lampa)
+    // ============================================================
+    var TMDB = {
+        key: function () {
+            return Lampa.TMDB && Lampa.TMDB.key ? Lampa.TMDB.key() : '';
+        },
+        url: function (path, params) {
+            var base = 'https://api.themoviedb.org/3/' + path;
+            var query = [];
+            params = params || {};
+            params.api_key = this.key();
+            params.language = Lampa.Storage.field('tmdb_lang') || 'ru-RU';
+            for (var k in params) {
+                if (params.hasOwnProperty(k)) {
+                    query.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+                }
+            }
+            return base + '?' + query.join('&');
+        }
+    };
+
+    function loadMovies(genreIds, type, callback) {
+        var path = type === 'tv' ? 'discover/tv' : 'discover/movie';
+        var url = TMDB.url(path, {
+            with_genres: genreIds,
+            sort_by: 'popularity.desc',
+            page: 1
+        });
+
+        Lampa.Request.get(url, function (data) {
+            if (data && data.results) {
+                callback(data.results);
+            } else {
+                callback([]);
+            }
+        }, function () {
+            callback([]);
+        });
+    }
+
+    // ============================================================
+    // 3. РЕГИСТРАЦИЯ КОМПОНЕНТА СТРАНИЦЫ
+    // ============================================================
+    Lampa.Component.add('horror_page', {
+        template: `
+            <div class="horror-page">
+                <div class="horror-page__title">🔥 УЖАСЫ</div>
+
+                <div class="horror-row">
+                    <div class="horror-row__title">👹 Рекомендации (Ужасы и Триллер)</div>
+                    <div class="horror-row__scroll" id="horror-rec"></div>
+                </div>
+
+                <div class="horror-row">
+                    <div class="horror-row__title">🎬 Фильмы ужасов</div>
+                    <div class="horror-row__scroll" id="horror-movies"></div>
+                </div>
+
+                <div class="horror-row">
+                    <div class="horror-row__title">📺 Сериалы ужасов</div>
+                    <div class="horror-row__scroll" id="horror-tv"></div>
+                </div>
+            </div>
+        `,
+        data: function () {
+            return {};
+        },
+        mounted: function () {
+            var self = this;
+
+            // Жанры: 27 = Ужасы, 53 = Триллер
+            var horrorThriller = '27,53';
+
+            // Рекомендации: фильмы + сериалы по жанрам ужасы/триллер
+            loadMovies(horrorThriller, 'movie', function (movies) {
+                loadMovies(horrorThriller, 'tv', function (tv) {
+                    var all = movies.concat(tv);
+                    all.sort(function () { return Math.random() - 0.5; });
+                    self.renderCards('#horror-rec', all.slice(0, 20));
+                });
+            });
+
+            // Фильмы
+            loadMovies('27', 'movie', function (movies) {
+                self.renderCards('#horror-movies', movies);
+            });
+
+            // Сериалы
+            loadMovies('27', 'tv', function (tv) {
+                self.renderCards('#horror-tv', tv);
+            });
+        },
+        renderCards: function (selector, items) {
+            var container = this.render().find(selector);
+            if (!container.length) return;
+
+            container.empty();
+
+            items.forEach(function (item) {
+                var title = item.title || item.name || 'Без названия';
+                var date = item.release_date || item.first_air_date || '';
+                var year = date ? date.substring(0, 4) : '';
+                var poster = item.poster_path
+                    ? 'https://image.tmdb.org/t/p/w500' + item.poster_path
+                    : '';
+
+                var card = $(`
+                    <div class="horror-card" data-id="${item.id}">
+                        ${poster ? `<img class="horror-card__poster" src="${poster}" alt="${title}">` : ''}
+                        <div class="horror-card__blood"></div>
+                        <div class="horror-card__info">
+                            <div class="horror-card__name">${title}</div>
+                            <div class="horror-card__year">${year}</div>
+                        </div>
+                    </div>
+                `);
+
+                card.on('hover:enter', function () {
+                    var type = item.first_air_date ? 'tv' : 'movie';
+                    Lampa.Activity.push({
+                        url: type + '/' + item.id,
+                        title: title,
+                        component: 'full',
+                        id: item.id,
+                        source: 'tmdb'
+                    });
+                });
+
+                container.append(card);
+            });
+        }
     });
-    return $card;
-  }
 
-  // ---------------------------------------------------------------------------
-  // 6. ИНИЦИАЛИЗАЦИЯ
-  // ---------------------------------------------------------------------------
-  function startPlugin() {
-    addMenuItem();
-    registerComponent();
-  }
+    // ============================================================
+    // 4. ДОБАВЛЕНИЕ ПУНКТА В БОКОВОЕ МЕНЮ
+    // ============================================================
+    function addHorrorMenuItem() {
+        if ($('[data-action="horror_menu"]').length) return;
 
-  if (window.appready) {
-    startPlugin();
-  } else {
-    Lampa.Listener.follow('app', function (e) {
-      if (e.type === 'ready') {
+        var icon = `
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C8 2 5 5 5 9c0 2.5 1.5 4.5 3 6 1 1 2 2.5 2 4h4c0-1.5 1-3 2-4 1.5-1.5 3-3.5 3-6 0-4-3-7-7-7z" fill="#ff2a2a"/>
+                <path d="M12 6c-1.5 0-3 1-3 3s1.5 3 3 3 3-1 3-3-1.5-3-3-3z" fill="#0a0a0a"/>
+            </svg>
+        `;
+
+        var button = $(`
+            <div class="menu__item menu__item--horror" data-action="horror_menu">
+                <div class="menu__item-icon">${icon}</div>
+                <div class="menu__item-text">Ужасы</div>
+            </div>
+        `);
+
+        button.on('hover:enter', function () {
+            Lampa.Activity.push({
+                title: 'Ужасы',
+                component: 'horror_page',
+                page: 1
+            });
+        });
+
+        var menu = Lampa.Menu.render();
+        var lastItem = menu.find('.menu__item').last();
+        if (lastItem.length) {
+            lastItem.after(button);
+        } else {
+            menu.append(button);
+        }
+
+        // Переинициализация навигации по меню
+        if (Lampa.Menu.init) {
+            Lampa.Menu.init();
+        }
+    }
+
+    // ============================================================
+    // 5. ЗАПУСК
+    // ============================================================
+    function startPlugin() {
+        window.plugin_horror_ready = true;
+
+        if (window.appready) {
+            addHorrorMenuItem();
+        } else {
+            Lampa.Listener.follow('app', function (e) {
+                if (e.type === 'ready') {
+                    addHorrorMenuItem();
+                }
+            });
+        }
+    }
+
+    if (!window.plugin_horror_ready) {
         startPlugin();
-      }
-    });
-  }
+    }
 })();
