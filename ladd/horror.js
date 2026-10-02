@@ -385,4 +385,483 @@
                     url: 'std_' + c.id + '_' + encodeURIComponent(c.title)
                 };
             });
-            call(makePart
+            call(makePart('🏢 Студии', cards));
+        });
+
+        // 6. Режиссёры
+        parts_data.push(function (call) {
+            var cards = DIRECTORS.map(function (c) {
+                return {
+                    source: SOURCE_NAME,
+                    id: 'dir_' + c.id,
+                    type: 'menu',
+                    title: c.title,
+                    original_title: '',
+                    img: '',
+                    vote_average: 0,
+                    vote_count: 0,
+                    url: 'dir_' + c.id + '_' + encodeURIComponent(c.title)
+                };
+            });
+            call(makePart('🎥 Режиссёры', cards));
+        });
+
+        // 7. Актёры
+        parts_data.push(function (call) {
+            var cards = ACTORS.map(function (c) {
+                return {
+                    source: SOURCE_NAME,
+                    id: 'act_' + c.id,
+                    type: 'menu',
+                    title: c.title,
+                    original_title: '',
+                    img: '',
+                    vote_average: 0,
+                    vote_count: 0,
+                    url: 'act_' + c.id + '_' + encodeURIComponent(c.title)
+                };
+            });
+            call(makePart('⭐ Актёры', cards));
+        });
+
+        // 8. Страны
+        parts_data.push(function (call) {
+            var cards = COUNTRIES.map(function (c) {
+                return {
+                    source: SOURCE_NAME,
+                    id: 'cnt_' + c.code,
+                    type: 'menu',
+                    title: c.title,
+                    original_title: '',
+                    img: '',
+                    vote_average: 0,
+                    vote_count: 0,
+                    url: 'cnt_' + c.code + '_' + encodeURIComponent(c.title)
+                };
+            });
+            call(makePart('🌍 Страны', cards));
+        });
+
+        // 9. Поджанры
+        parts_data.push(function (call) {
+            var cards = SUBGENRES.map(function (c) {
+                return {
+                    source: SOURCE_NAME,
+                    id: 'sub_' + c.id,
+                    type: 'menu',
+                    title: c.title,
+                    original_title: '',
+                    img: '',
+                    vote_average: 0,
+                    vote_count: 0,
+                    url: 'sub_' + c.id + '_' + encodeURIComponent(c.title)
+                };
+            });
+            call(makePart('🎭 Поджанры', cards));
+        });
+
+        // 10. 10 тОПов
+        TOPS.forEach(function (top, idx) {
+            parts_data.push(function (call) {
+                var fetcher = top.type === 'tv' ? fetchTV : fetchMovies;
+                fetcher(top.params, function (results) {
+                    call(makePart(top.title, results, 'top_' + idx));
+                }, call);
+            });
+        });
+
+        var parts_limit = 5;
+        function loadPart(partLoaded, partEmpty) {
+            Lampa.Api.partNext(parts_data, parts_limit, partLoaded, partEmpty);
+        }
+
+        loadPart(oncomplite, onerror);
+        return loadPart;
+    }
+
+    // ============================================================
+    //  CATEGORY — переход по селектору / топу
+    // ============================================================
+    function category(params, oncomplite, onerror) {
+        var url = params.url || '';
+        var parts_data = [];
+
+        var colMatch = url.match(/^col_(\d+)_(.+)$/);
+        var stdMatch = url.match(/^std_(\d+)_(.+)$/);
+        var dirMatch = url.match(/^dir_(\d+)_(.+)$/);
+        var actMatch = url.match(/^act_(\d+)_(.+)$/);
+        var cntMatch = url.match(/^cnt_([A-Z]+)_(.+)$/);
+        var subMatch = url.match(/^sub_(\d+)_(.+)$/);
+        var topMatch = url.match(/^top_(\d+)$/);
+
+        if (colMatch) {
+            var col_id    = parseInt(colMatch[1]);
+            var col_title = decodeURIComponent(colMatch[2]);
+            parts_data.push(function (call) {
+                fetchCollection(col_id, function (results) {
+                    call(makePart(col_title, results));
+                }, call);
+            });
+        }
+        else if (stdMatch) {
+            var std_id    = parseInt(stdMatch[1]);
+            var std_title = decodeURIComponent(stdMatch[2]);
+            parts_data.push(function (call) {
+                fetchMovies({
+                    with_companies: std_id,
+                    with_genres:    HORROR_GENRE,
+                    sort_by:        'popularity.desc',
+                    page:           1
+                }, function (results) {
+                    call(makePart(std_title, results));
+                }, call);
+            });
+        }
+        else if (dirMatch) {
+            var dir_id    = parseInt(dirMatch[1]);
+            var dir_title = decodeURIComponent(dirMatch[2]);
+            parts_data.push(function (call) {
+                fetchMovies({
+                    with_crew:   dir_id,
+                    with_genres: HORROR_GENRE,
+                    sort_by:     'popularity.desc',
+                    page:        1
+                }, function (results) {
+                    call(makePart(dir_title, results));
+                }, call);
+            });
+        }
+        else if (actMatch) {
+            var act_id    = parseInt(actMatch[1]);
+            var act_title = decodeURIComponent(actMatch[2]);
+            parts_data.push(function (call) {
+                fetchMovies({
+                    with_cast:   act_id,
+                    with_genres: HORROR_GENRE,
+                    sort_by:     'popularity.desc',
+                    page:        1
+                }, function (results) {
+                    call(makePart(act_title, results));
+                }, call);
+            });
+        }
+        else if (cntMatch) {
+            var cnt_code  = cntMatch[1];
+            var cnt_title = decodeURIComponent(cntMatch[2]);
+            parts_data.push(function (call) {
+                fetchMovies({
+                    with_origin_country: cnt_code,
+                    with_genres:         HORROR_GENRE,
+                    sort_by:             'popularity.desc',
+                    page:                1
+                }, function (results) {
+                    call(makePart(cnt_title, results));
+                }, call);
+            });
+        }
+        else if (subMatch) {
+            var sub_id    = parseInt(subMatch[1]);
+            var sub_title = decodeURIComponent(subMatch[2]);
+            parts_data.push(function (call) {
+                fetchMovies({
+                    with_keywords: sub_id,
+                    with_genres:   HORROR_GENRE,
+                    sort_by:       'popularity.desc',
+                    page:          1
+                }, function (results) {
+                    call(makePart(sub_title, results));
+                }, call);
+            });
+        }
+        else if (topMatch) {
+            var top_idx = parseInt(topMatch[1]);
+            var top     = TOPS[top_idx];
+            if (top) {
+                var fetcher = top.type === 'tv' ? fetchTV : fetchMovies;
+                parts_data.push(function (call) {
+                    fetcher(top.params, function (results) {
+                        call(makePart(top.title, results));
+                    }, call);
+                });
+            }
+        }
+        else {
+            return main(params, oncomplite, onerror);
+        }
+
+        var loadPart = function (partLoaded, partEmpty) {
+            Lampa.Api.partNext(parts_data, 5, partLoaded, partEmpty);
+        };
+        loadPart(oncomplite, onerror);
+        return loadPart;
+    }
+
+    // ============================================================
+    //  FULL — подробная карточка фильма
+    // ============================================================
+    function full(params, oncomplite, onerror) {
+        var card = params.card;
+        if (!card) return onerror();
+
+        // Если это «папочная» карточка — не грузим TMDB, а сразу переходим
+        if (card.type === 'menu' && card.url) {
+            Lampa.Router.call('category', {
+                url:      card.url,
+                title:    card.title,
+                source:   SOURCE_NAME,
+                page:     1
+            });
+            // отдаём пустой результат, чтобы Lampa закрыла окно full
+            oncomplite({});
+            return;
+        }
+
+        var type = card.name || card.original_name ? 'tv' : 'movie';
+        var id   = card.id;
+
+        tmdbApi(type + '/' + id, {
+            language:            'ru-RU',
+            append_to_response:  'credits,similar,videos'
+        }, function (data) {
+            var result = convert(data, type);
+
+            var persons = { cast: [], crew: [] };
+            if (data.credits) {
+                persons.cast = (data.credits.cast || []).slice(0, 20).map(function (p) {
+                    return {
+                        id:        p.id,
+                        name:      p.name,
+                        character: p.character || '',
+                        img:       p.profile_path ? Lampa.TMDB.image('t/p/w185' + p.profile_path) : '',
+                        url:       'person'
+                    };
+                });
+                persons.crew = (data.credits.crew || []).slice(0, 20).map(function (p) {
+                    return {
+                        id:   p.id,
+                        name: p.name,
+                        job:  p.job || '',
+                        img:  p.profile_path ? Lampa.TMDB.image('t/p/w185' + p.profile_path) : '',
+                        url:  'person'
+                    };
+                });
+            }
+
+            var simular = null;
+            if (data.similar && data.similar.results) {
+                simular = {
+                    results: data.similar.results.slice(0, 20).map(function (d) {
+                        return convert(d, type);
+                    })
+                };
+            }
+
+            var status = new Lampa.Status(4);
+            status.onComplite = oncomplite;
+            status.append('movie',      result);
+            status.append('persons',    persons);
+            status.append('collection', null);
+            status.append('simular',    simular);
+        }, onerror);
+    }
+
+    // ============================================================
+    //  LIST — постраничный список (для category_full)
+    // ============================================================
+    function list(params, oncomplite, onerror) {
+        var url  = params.url;
+        var page = params.page || 1;
+
+        var qPos  = url.indexOf('?');
+        var path  = qPos >= 0 ? url.substring(0, qPos) : url;
+        var query = qPos >= 0 ? url.substring(qPos + 1) : '';
+
+        var tmdbParams = { page: page };
+        query.split('&').forEach(function (kv) {
+            if (!kv) return;
+            var idx = kv.indexOf('=');
+            if (idx > 0) {
+                tmdbParams[decodeURIComponent(kv.substring(0, idx))] = decodeURIComponent(kv.substring(idx + 1));
+            }
+        });
+
+        tmdbApi(path, tmdbParams, function (data) {
+            var results = (data.results || []).map(function (d) { return convert(d); });
+
+            oncomplite({
+                results:       results,
+                url:           url,
+                page:          data.page          || 1,
+                total_pages:   data.total_pages   || 1,
+                total_results: data.total_results || results.length,
+                more:          (data.page || 1) < (data.total_pages || 1)
+            });
+        }, onerror);
+    }
+
+    // ============================================================
+    //  DISCOVERY / SEARCH
+    // ============================================================
+    function search(params, oncomplite, onerror) {
+        var query = decodeURIComponent(params.query || '');
+        if (!query) return oncomplite([]);
+
+        tmdbApi('search/multi', {
+            query:        query,
+            include_adult: false,
+            language:     'ru-RU',
+            page:         1
+        }, function (data) {
+            var items  = [];
+            var movies = [];
+            var tv     = [];
+
+            (data.results || []).forEach(function (d) {
+                if (d.media_type === 'movie') movies.push(convert(d, 'movie'));
+                else if (d.media_type === 'tv') tv.push(convert(d, 'tv'));
+            });
+
+            if (movies.length) items.push({ title: 'Фильмы',  results: movies, type: 'movie' });
+            if (tv.length)     items.push({ title: 'Сериалы', results: tv,     type: 'tv'    });
+
+            oncomplite(items);
+        }, onerror);
+    }
+
+    function discovery() {
+        return {
+            title:  SOURCE_TITLE,
+            search: search,
+            params: {
+                align_left: true,
+                object:     { source: SOURCE_NAME }
+            },
+            onMore: function (params) {
+                Lampa.Activity.push({
+                    url:       'search_' + encodeURIComponent(params.query),
+                    title:     'Поиск: ' + params.query,
+                    component: 'category_full',
+                    source:    SOURCE_NAME,
+                    page:      1,
+                    query:     params.query
+                });
+            },
+            onCancel: function () { network.clear(); }
+        };
+    }
+
+    // ============================================================
+    //  Заглушки
+    // ============================================================
+    function menu(params, oncomplite) { oncomplite([]); }
+    function person(params, oncomplite) { oncomplite({}); }
+    function seasons(tv, from, oncomplite) { oncomplite({}); }
+    function menuCategory(params, oncomplite) { oncomplite([]); }
+    function clear() { network.clear(); }
+
+    // ============================================================
+    //  Регистрация источника
+    // ============================================================
+    var HORROR = {
+        SOURCE_NAME:  SOURCE_NAME,
+        SOURCE_TITLE: SOURCE_TITLE,
+        main:         main,
+        menu:         menu,
+        full:         full,
+        list:         list,
+        category:     category,
+        clear:        clear,
+        person:       person,
+        seasons:      seasons,
+        menuCategory: menuCategory,
+        discovery:    discovery
+    };
+
+    // ============================================================
+    //  Плагин
+    // ============================================================
+    function startPlugin() {
+        window.horror_plugin = true;
+
+        function addPlugin() {
+            // Регистрируем источник
+            if (!Lampa.Api.sources[SOURCE_NAME]) {
+                Lampa.Api.sources[SOURCE_NAME] = HORROR;
+                Object.defineProperty(Lampa.Api.sources, SOURCE_NAME, {
+                    get: function () { return HORROR; }
+                });
+            }
+
+            // Обработка действия 'horror' в меню
+            Lampa.Listener.follow('menu', function (e) {
+                if (e.type === 'action' && e.action === 'horror') {
+                    Lampa.Storage.set('source', SOURCE_NAME);
+                    Lampa.Activity.push({
+                        url:       '',
+                        title:     SOURCE_TITLE,
+                        component: 'category',
+                        source:    SOURCE_NAME,
+                        page:      1
+                    });
+                    if (e.abort) e.abort();
+                }
+            });
+
+            // Пытаемся добавить пункт в сайдбар
+            addMenuItem();
+
+            Lampa.Listener.follow('menu', function (e) {
+                if (e.type === 'open' || e.type === 'render') {
+                    setTimeout(addMenuItem, 100);
+                }
+            });
+
+            // Периодическая проверка (на случай перерисовки)
+            setInterval(addMenuItem, 2000);
+        }
+
+        function addMenuItem() {
+            var lists = $('.menu .menu__list, .menu__list');
+            if (!lists.length) return;
+
+            lists.each(function () {
+                var list = $(this);
+                if (list.find('[data-action="horror"]').length) return;
+
+                var item = $(
+                    '<div class="menu__item selector" data-action="horror">' +
+                        '<div class="menu__ico">' +
+                            '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">' +
+                                '<path d="M12 2C8.13 2 5 5.13 5 9c0 1.66.5 3.2 1.36 4.48C5.5 14.68 5 16.28 5 18c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4 0-1.72-.5-3.32-1.36-4.52C18.5 12.2 19 10.66 19 9c0-3.87-3.13-7-7-7zm-3 8c-.83 0-1.5-.67-1.5-1.5S8.17 7 9 7s1.5.67 1.5 1.5S9.83 10 9 10zm6 0c-.83 0-1.5-.67-1.5-1.5S14.17 7 15 7s1.5.67 1.5 1.5S15.83 10 15 10zm-3 8c-2.21 0-4-1.79-4-4 0-.5.1-1 .29-1.44.62.88 1.65 1.44 2.71 1.44h2c1.06 0 2.09-.56 2.71-1.44.19.44.29.94.29 1.44 0 2.21-1.79 4-4 4z"/>' +
+                            '</svg>' +
+                        '</div>' +
+                        '<div class="menu__text">' + SOURCE_TITLE + '</div>' +
+                    '</div>'
+                );
+
+                item.on('hover:enter', function () {
+                    Lampa.Storage.set('source', SOURCE_NAME);
+                    Lampa.Activity.push({
+                        url:       '',
+                        title:     SOURCE_TITLE,
+                        component: 'category',
+                        source:    SOURCE_NAME,
+                        page:      1
+                    });
+                });
+
+                list.append(item);
+            });
+        }
+
+        if (window.appready) addPlugin();
+        else {
+            Lampa.Listener.follow('app', function (e) {
+                if (e.type === 'ready') addPlugin();
+            });
+        }
+    }
+
+    if (!window.horror_plugin) startPlugin();
+
+})();
