@@ -1,9 +1,9 @@
 /**
- * Horror plugin for Lampa (v7)
+ * Horror plugin for Lampa (v8)
  * - Строки: Рекомендации / Кино / Сериалы / Аниме
  * - Desktop: список 55% + обзор справа
- * - Mobile:  список 100% + компактная панель над .navigation-bar,
- *            описание сразу под строкой постер+backdrop
+ * - Mobile:  список 100% + компактная панель над .navigation-bar
+ * - Убраны большие отступы между строками внутри .horror-page
  */
 (function () {
     'use strict';
@@ -137,8 +137,6 @@
             backdropWrap.style.display = backdropSrc ? 'block' : 'none';
         }
 
-        /* Считаем высоту .navigation-bar и прокидываем в CSS как --horror-nav.
-           Также сдвигаем нижний padding скролла карточек под панель. */
         function recalcNavOffset() {
             if (!previewEl) return;
             var nav = document.querySelector('.navigation-bar');
@@ -147,9 +145,7 @@
 
             var panelH = Math.round(previewEl.getBoundingClientRect().height) || 0;
             var html = previewEl.closest('.horror-page');
-            if (html) {
-                html.style.setProperty('--horror-panel-h', panelH + 'px');
-            }
+            if (html) html.style.setProperty('--horror-panel-h', panelH + 'px');
         }
 
         comp.use({
@@ -203,7 +199,6 @@
                 var first = data[0] && data[0].results && data[0].results[0];
                 if (first) updatePreview(first);
 
-                /* считаем отступы после первой отрисовки */
                 requestAnimationFrame(function () {
                     recalcNavOffset();
                     setTimeout(recalcNavOffset, 300);
@@ -244,6 +239,42 @@
         var style = document.createElement('style');
         style.id = 'horror-plugin-styles';
         style.textContent = [
+
+            /* ═════ УБИРАЕМ ОТСТУПЫ МЕЖДУ СТРОКАМИ ═════ */
+            /* Отступы у .items-line в Lampa задаются через padding/margin — */
+            /* переопределяем только внутри .horror-page, чтобы не сломать остальное. */
+            '.horror-page .items-line {',
+            '    padding-top: 0 !important;',
+            '    padding-bottom: 0 !important;',
+            '    margin-top: 0 !important;',
+            '    margin-bottom: 0.5em !important;',
+            '}',
+
+            '.horror-page .items-line__body {',
+            '    padding-top: 0.3em !important;',
+            '    padding-bottom: 0.3em !important;',
+            '}',
+
+            /* Компактные заголовки строк */
+            '.horror-page .items-line__head {',
+            '    padding-top: 0.4em !important;',
+            '    padding-bottom: 0.4em !important;',
+            '    margin-bottom: 0 !important;',
+            '}',
+
+            '.horror-page .items-line__title {',
+            '    margin: 0 !important;',
+            '}',
+
+            /* Уменьшаем высоту карточек в строках */
+            '.horror-page .items-cards.mapping--line .card {',
+            '    margin-bottom: 0 !important;',
+            '}',
+
+            /* Отступы у самого скролла — компактнее сверху/снизу */
+            '.horror-page > .scroll .scroll__content {',
+            '    padding-top: 0.5em !important;',
+            '}',
 
             /* ───── DESKTOP ───── */
             '.horror-page { position: relative; }',
@@ -310,26 +341,19 @@
             /* ───── MOBILE ───── */
             '@media (max-width: 768px) {',
 
-            '    .horror-page {',
-            '        --horror-panel-h: 0px;',
-            '    }',
-
+            '    .horror-page { --horror-panel-h: 0px; }',
             '    .horror-page > .scroll { width: 100% !important; }',
 
-            /* Отступ снизу, чтобы карточки не пропадали под панелью и навбаром */
             '    .horror-page > .scroll .scroll__content {',
-            '        padding-bottom: calc(var(--horror-panel-h, 34vh) + var(--horror-nav, 0px) + 1.5em) !important;',
+            '        padding-bottom: calc(var(--horror-panel-h, 34vh) + var(--horror-nav, 0px) + 1em) !important;',
             '    }',
 
-            /* Панель: поднята над .navigation-bar, z-index выше навбара */
             '    .horror-preview {',
             '        position: fixed;',
             '        top: auto;',
             '        bottom: calc(var(--horror-nav, 0px) + 0.5em);',
-            '        left: 0.5em;',
-            '        right: 0.5em;',
-            '        width: auto;',
-            '        height: auto;',
+            '        left: 0.5em; right: 0.5em;',
+            '        width: auto; height: auto;',
             '        max-height: 34vh;',
             '        padding: 0.8em 0.9em 0.9em;',
             '        border-radius: 1em;',
@@ -339,50 +363,22 @@
             '        box-shadow: 0 12px 40px rgba(0,0,0,0.8);',
             '        display: flex;',
             '        flex-direction: column;',
-            /* ВАЖНО: убираем наследованный center, контент идёт сверху вниз */
             '        justify-content: flex-start;',
             '        overflow: hidden;',
-            '        z-index: 200;',    /* выше .navigation-bar */
+            '        z-index: 200;',
             '        color: #fff;',
             '    }',
 
             '.horror-preview__media {',
-            '    height: 6em;',
-            '    margin: 0 0 0.5em 0;',   /* убрали пустой зазор */
-            '    gap: 0.6em;',
-            '    flex-shrink: 0;',
+            '    height: 6em; margin: 0 0 0.5em 0; gap: 0.6em; flex-shrink: 0;',
             '}',
-
-            '.horror-preview__poster-wrap {',
-            '    width: 4em;',
-            '    border-radius: 0.4em;',
-            '}',
-
-            '.horror-preview__backdrop-wrap {',
-            '    border-radius: 0.4em;',
-            '}',
-
-            '.horror-preview__title {',
-            '    font-size: 1.05em;',
-            '    line-height: 1.15;',
-            '    margin: 0 0 0.1em 0;',
-            '    flex-shrink: 0;',
-            '}',
-
-            '.horror-preview__meta {',
-            '    font-size: 0.75em;',
-            '    margin: 0 0 0.4em 0;',
-            '    flex-shrink: 0;',
-            '}',
-
+            '.horror-preview__poster-wrap { width: 4em; border-radius: 0.4em; }',
+            '.horror-preview__backdrop-wrap { border-radius: 0.4em; }',
+            '.horror-preview__title { font-size: 1.05em; line-height: 1.15; margin: 0 0 0.1em 0; flex-shrink: 0; }',
+            '.horror-preview__meta { font-size: 0.75em; margin: 0 0 0.4em 0; flex-shrink: 0; }',
             '.horror-preview__overview {',
-            '    font-size: 0.82em;',
-            '    line-height: 1.35;',
-            '    opacity: 0.9;',
-            '    max-height: 9vh;',
-            '    margin: 0;',
-            '    padding: 0;',
-            '    overflow: hidden;',
+            '    font-size: 0.82em; line-height: 1.35; opacity: 0.9;',
+            '    max-height: 9vh; margin: 0; padding: 0; overflow: hidden;',
             '}',
             '}'
         ].join('\n');
