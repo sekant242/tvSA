@@ -5,255 +5,346 @@
     var ACTIVE_KEY = 'lampa_theme_pack_active';
 
     // =========================================================================
-    // 10 кардинально разных тем
+    // 10 тем (включая "Стандартная")
     // =========================================================================
     var THEMES = {
 
-        // ----- 1. Киберпанк -----
-        cyberpunk: {
-            name: '🌃 Неоновый Киберпанк',
+        // =====================================================================
+        // 1. СТАНДАРТНАЯ — без изменений
+        // =====================================================================
+        standard: {
+            name: '📺 Стандартная',
+            css: ''
+        },
+
+        // =====================================================================
+        // 2. СЕТКА — карточки превращаются в сетку 4x4, горизонтальный скролл выкл.
+        // =====================================================================
+        grid: {
+            name: '▦ Сетка 4×4',
             css: [
-                'body.theme-cyberpunk { background: radial-gradient(ellipse at top, #1a0033 0%, #0a0018 50%, #000 100%) !important; color: #e0e0ff !important; }',
-                'body.theme-cyberpunk .head, body.theme-cyberpunk .head__body { background: rgba(10,0,25,.85) !important; border-bottom: 2px solid rgba(255,0,255,.5) !important; box-shadow: 0 0 30px rgba(255,0,255,.3) !important; }',
-                'body.theme-cyberpunk .head__title, body.theme-cyberpunk .head__time, body.theme-cyberpunk .head__logo-icon { color: #ff00ff !important; text-shadow: 0 0 10px rgba(255,0,255,.8) !important; }',
-                'body.theme-cyberpunk .menu, body.theme-cyberpunk .menu__body, body.theme-cyberpunk .wrap__left { background: rgba(10,0,25,.9) !important; border-right: 1px solid rgba(0,255,255,.3) !important; }',
-                'body.theme-cyberpunk .menu__item { color: #e0e0ff !important; }',
-                'body.theme-cyberpunk .menu__item.focus, body.theme-cyberpunk .menu__item:hover { background: linear-gradient(90deg, rgba(255,0,255,.3), rgba(0,255,255,.1)) !important; border-left: 3px solid #ff00ff !important; color: #fff !important; text-shadow: 0 0 8px rgba(255,0,255,.6) !important; }',
-                'body.theme-cyberpunk .card { border: 1px solid rgba(0,255,255,.3) !important; box-shadow: 0 4px 20px rgba(0,255,255,.15) !important; }',
-                'body.theme-cyberpunk .card.focus, body.theme-cyberpunk .card:hover { border-color: #ff00ff !important; box-shadow: 0 0 30px rgba(255,0,255,.6), 0 0 60px rgba(0,255,255,.3) !important; transform: translateY(-3px) !important; }',
-                'body.theme-cyberpunk .card__title { color: #00ffff !important; text-shadow: 0 0 5px rgba(0,255,255,.5) !important; }',
-                'body.theme-cyberpunk .card__age { color: #ff00ff !important; }',
-                'body.theme-cyberpunk .card__vote { background: linear-gradient(135deg, #ff00ff, #00ffff) !important; color: #000 !important; font-weight: bold !important; }',
-                'body.theme-cyberpunk .settings, body.theme-cyberpunk .modal__content, body.theme-cyberpunk .selectbox__content { background: linear-gradient(180deg, #100025 0%, #05000f 100%) !important; border: 1px solid rgba(255,0,255,.4) !important; box-shadow: 0 0 50px rgba(255,0,255,.2) !important; }',
-                'body.theme-cyberpunk .settings-param.focus, body.theme-cyberpunk .settings-param:hover { background: linear-gradient(90deg, rgba(255,0,255,.15), rgba(0,255,255,.05)) !important; }',
-                'body.theme-cyberpunk .selectbox-item.focus, body.theme-cyberpunk .selectbox-item:hover { background: linear-gradient(90deg, rgba(255,0,255,.25), rgba(0,255,255,.1)) !important; color: #fff !important; }',
-                'body.theme-cyberpunk .simple-button, body.theme-cyberpunk .full-start__button { background: linear-gradient(135deg, rgba(255,0,255,.2), rgba(0,255,255,.2)) !important; border: 1px solid #ff00ff !important; color: #fff !important; }',
-                'body.theme-cyberpunk .menu__ico svg, body.theme-cyberpunk .head__action svg { color: #00ffff !important; filter: drop-shadow(0 0 5px rgba(0,255,255,.7)) !important; }'
+                // Разворачиваем горизонтальный скролл в сетку
+                'body.theme-grid .scroll--horizontal { overflow: visible !important; height: auto !important; }',
+                'body.theme-grid .scroll--horizontal .scroll__content { overflow: visible !important; height: auto !important; }',
+                'body.theme-grid .items-cards.mapping--line {',
+                '   display: grid !important;',
+                '   grid-template-columns: repeat(4, minmax(0, 1fr)) !important;',
+                '   gap: 16px !important;',
+                '   width: 100% !important;',
+                '   padding: 0 24px !important;',
+                '   transform: none !important;',
+                '   white-space: normal !important;',
+                '   box-sizing: border-box !important;',
+                '}',
+                // Категория в полноэкранном режиме — 5 колонок
+                'body.theme-grid .mapping--grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 16px !important; }',
+                'body.theme-grid .card { width: 100% !important; min-width: 0 !important; max-width: none !important; }',
+                'body.theme-grid .card__view { width: 100% !important; aspect-ratio: 2 / 3 !important; height: auto !important; border-radius: 10px !important; overflow: hidden !important; }',
+                'body.theme-grid .card__img { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; }',
+                'body.theme-grid .card__title { margin-top: 6px !important; font-size: .95em !important; }'
             ].join('')
         },
 
-        // ----- 2. Вейпорвейв -----
-        vaporwave: {
-            name: '🌴 Вейпорвейв',
+        // =====================================================================
+        // 3. СПИСОК — карточки становятся строками: постер слева, текст справа
+        // =====================================================================
+        list: {
+            name: '☰ Список',
             css: [
-                'body.theme-vaporwave { background: linear-gradient(180deg, #2d1b4e 0%, #6b3fa0 40%, #ff6ec7 70%, #ffb07c 100%) !important; color: #ffe8ff !important; }',
-                'body.theme-vaporwave .head, body.theme-vaporwave .head__body { background: rgba(45,27,78,.7) !important; border-bottom: 1px solid rgba(255,110,199,.4) !important; }',
-                'body.theme-vaporwave .head__title { color: #00e5ff !important; text-shadow: 2px 2px 0 #ff6ec7, 0 0 15px rgba(0,229,255,.5) !important; font-style: italic !important; }',
-                'body.theme-vaporwave .menu, body.theme-vaporwave .wrap__left { background: linear-gradient(180deg, rgba(45,27,78,.9), rgba(107,63,160,.85)) !important; }',
-                'body.theme-vaporwave .menu__item { color: #ffe8ff !important; }',
-                'body.theme-vaporwave .menu__item.focus, body.theme-vaporwave .menu__item:hover { background: linear-gradient(90deg, rgba(255,110,199,.4), rgba(0,229,255,.2)) !important; color: #fff !important; text-shadow: 0 0 8px rgba(255,110,199,.8) !important; }',
-                'body.theme-vaporwave .card { border: 1px solid rgba(255,110,199,.4) !important; box-shadow: 0 6px 25px rgba(255,110,199,.25) !important; }',
-                'body.theme-vaporwave .card.focus, body.theme-vaporwave .card:hover { box-shadow: 0 0 40px rgba(0,229,255,.6), 0 0 80px rgba(255,110,199,.4) !important; transform: translateY(-4px) scale(1.02) !important; }',
-                'body.theme-vaporwave .card__title { color: #00e5ff !important; font-style: italic !important; }',
-                'body.theme-vaporwave .card__age { color: #ff6ec7 !important; }',
-                'body.theme-vaporwave .settings, body.theme-vaporwave .modal__content, body.theme-vaporwave .selectbox__content { background: linear-gradient(180deg, #2d1b4e, #1a0e2e) !important; border: 1px solid rgba(255,110,199,.4) !important; }',
-                'body.theme-vaporwave .selectbox-item.focus, body.theme-vaporwave .selectbox-item:hover { background: linear-gradient(90deg, rgba(255,110,199,.3), rgba(0,229,255,.15)) !important; }',
-                'body.theme-vaporwave .simple-button { background: linear-gradient(135deg, #ff6ec7, #00e5ff) !important; color: #1a0e2e !important; font-weight: bold !important; }',
-                'body.theme-vaporwave .menu__ico svg { color: #ff6ec7 !important; filter: drop-shadow(0 0 6px rgba(255,110,199,.8)) !important; }'
+                'body.theme-list .scroll--horizontal { overflow: visible !important; height: auto !important; }',
+                'body.theme-list .scroll--horizontal .scroll__content { overflow: visible !important; height: auto !important; }',
+                'body.theme-list .items-cards.mapping--line {',
+                '   display: flex !important;',
+                '   flex-direction: column !important;',
+                '   gap: 8px !important;',
+                '   width: 100% !important;',
+                '   padding: 0 24px 16px !important;',
+                '   transform: none !important;',
+                '   white-space: normal !important;',
+                '   box-sizing: border-box !important;',
+                '}',
+                'body.theme-list .card {',
+                '   display: flex !important;',
+                '   flex-direction: row !important;',
+                '   align-items: center !important;',
+                '   width: 100% !important;',
+                '   min-width: 0 !important;',
+                '   max-width: none !important;',
+                '   background: rgba(255,255,255,.05) !important;',
+                '   border-radius: 10px !important;',
+                '   padding: 8px 14px 8px 8px !important;',
+                '   gap: 14px !important;',
+                '   transition: background .2s, transform .2s !important;',
+                '}',
+                'body.theme-list .card.focus, body.theme-list .card:hover { background: rgba(255,255,255,.15) !important; transform: translateX(6px) !important; }',
+                'body.theme-list .card__view {',
+                '   width: 66px !important; height: 96px !important; min-width: 66px !important;',
+                '   aspect-ratio: auto !important; padding: 0 !important;',
+                '   border-radius: 6px !important; overflow: hidden !important;',
+                '   position: relative !important;',
+                '}',
+                'body.theme-list .card__img { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; }',
+                'body.theme-list .card__title { display: block !important; font-size: 1.05em !important; font-weight: 600 !important; margin: 0 !important; flex: 1 !important; }',
+                'body.theme-list .card__age { font-size: .9em !important; opacity: .65 !important; }',
+                'body.theme-list .card__vote { position: static !important; margin-left: auto !important; font-size: .95em !important; }',
+                'body.theme-list .card__quality, body.theme-list .card__type { display: none !important; }',
+                'body.theme-list .items-line__body { padding: 0 !important; }'
             ].join('')
         },
 
-        // ----- 3. Дракула -----
-        dracula: {
-            name: '🧛 Dracula',
+        // =====================================================================
+        // 4. КОМПАКТ — плотная сетка 8 карточек в ряд
+        // =====================================================================
+        compact: {
+            name: '▤ Компакт 8 в ряд',
             css: [
-                'body.theme-dracula { background: #282a36 !important; color: #f8f8f2 !important; }',
-                'body.theme-dracula .head, body.theme-dracula .head__body { background: #21222c !important; border-bottom: 1px solid #6272a4 !important; }',
-                'body.theme-dracula .head__title { color: #ff79c6 !important; }',
-                'body.theme-dracula .menu, body.theme-dracula .wrap__left { background: #21222c !important; }',
-                'body.theme-dracula .menu__item { color: #f8f8f2 !important; }',
-                'body.theme-dracula .menu__item.focus, body.theme-dracula .menu__item:hover { background: #44475a !important; color: #ff79c6 !important; }',
-                'body.theme-dracula .card { border: 1px solid #44475a !important; }',
-                'body.theme-dracula .card.focus, body.theme-dracula .card:hover { border-color: #ff79c6 !important; box-shadow: 0 0 25px rgba(255,121,198,.4) !important; }',
-                'body.theme-dracula .card__title { color: #bd93f9 !important; }',
-                'body.theme-dracula .card__age { color: #8be9fd !important; }',
-                'body.theme-dracula .card__vote { background: #50fa7b !important; color: #282a36 !important; font-weight: bold !important; }',
-                'body.theme-dracula .settings, body.theme-dracula .modal__content, body.theme-dracula .selectbox__content { background: #282a36 !important; border: 1px solid #44475a !important; }',
-                'body.theme-dracula .selectbox-item.focus, body.theme-dracula .selectbox-item:hover { background: #44475a !important; color: #f1fa8c !important; }',
-                'body.theme-dracula .simple-button, body.theme-dracula .full-start__button { background: #44475a !important; border: 1px solid #6272a4 !important; color: #f8f8f2 !important; }',
-                'body.theme-dracula .menu__ico svg { color: #bd93f9 !important; }'
+                'body.theme-compact .scroll--horizontal { overflow: visible !important; height: auto !important; }',
+                'body.theme-compact .items-cards.mapping--line {',
+                '   display: grid !important;',
+                '   grid-template-columns: repeat(8, minmax(0, 1fr)) !important;',
+                '   gap: 8px !important;',
+                '   width: 100% !important;',
+                '   padding: 0 16px !important;',
+                '   transform: none !important;',
+                '   white-space: normal !important;',
+                '}',
+                'body.theme-compact .mapping--grid { grid-template-columns: repeat(8, minmax(0,1fr)) !important; gap: 8px !important; }',
+                'body.theme-compact .card { width: 100% !important; min-width: 0 !important; }',
+                'body.theme-compact .card__view { width: 100% !important; aspect-ratio: 2 / 3 !important; height: auto !important; border-radius: 4px !important; overflow: hidden !important; }',
+                'body.theme-compact .card__img { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; }',
+                'body.theme-compact .card__title { font-size: .8em !important; margin-top: 4px !important; line-height: 1.1 !important; -webkit-line-clamp: 2 !important; }',
+                'body.theme-compact .card__age { font-size: .75em !important; opacity: .6 !important; }',
+                'body.theme-compact .card__vote { font-size: .7em !important; padding: .1em .4em !important; }',
+                'body.theme-compact .card__quality, body.theme-compact .card__type { display: none !important; }',
+                // Меню в виде узкой иконочной полосы
+                'body.theme-compact .wrap__left { width: 60px !important; min-width: 60px !important; }',
+                'body.theme-compact .menu__item { justify-content: center !important; padding: 12px 0 !important; }',
+                'body.theme-compact .menu__text { display: none !important; }',
+                'body.theme-compact .menu__ico { margin: 0 !important; }'
             ].join('')
         },
 
-        // ----- 4. Матрица -----
-        matrix: {
-            name: '💊 Матрица',
+        // =====================================================================
+        // 5. КИНОТЕАТР — огромные карточки 2 в ряд, скрытое меню
+        // =====================================================================
+        cinema: {
+            name: '🎬 Кинотеатр',
             css: [
-                'body.theme-matrix { background: #000 !important; color: #00ff41 !important; font-family: monospace !important; }',
-                'body.theme-matrix .head, body.theme-matrix .head__body { background: #000 !important; border-bottom: 1px solid #00ff41 !important; box-shadow: 0 0 20px rgba(0,255,65,.4) !important; }',
-                'body.theme-matrix .head__title, body.theme-matrix .head__time { color: #00ff41 !important; text-shadow: 0 0 8px #00ff41 !important; font-family: monospace !important; letter-spacing: 2px !important; }',
-                'body.theme-matrix .menu, body.theme-matrix .wrap__left { background: #000 !important; border-right: 1px solid #00ff41 !important; }',
-                'body.theme-matrix .menu__item { color: #00ff41 !important; font-family: monospace !important; }',
-                'body.theme-matrix .menu__item.focus, body.theme-matrix .menu__item:hover { background: rgba(0,255,65,.15) !important; border-left: 3px solid #00ff41 !important; color: #fff !important; text-shadow: 0 0 10px #00ff41 !important; }',
-                'body.theme-matrix .card { border: 1px solid #00ff41 !important; box-shadow: 0 0 10px rgba(0,255,65,.3) !important; }',
-                'body.theme-matrix .card.focus, body.theme-matrix .card:hover { box-shadow: 0 0 30px #00ff41 !important; }',
-                'body.theme-matrix .card__title { color: #00ff41 !important; font-family: monospace !important; }',
-                'body.theme-matrix .card__age { color: #00aa2b !important; }',
-                'body.theme-matrix .settings, body.theme-matrix .modal__content, body.theme-matrix .selectbox__content { background: #000 !important; border: 1px solid #00ff41 !important; box-shadow: 0 0 25px rgba(0,255,65,.3) !important; }',
-                'body.theme-matrix .settings-param__name, body.theme-matrix .settings-param__value, body.theme-matrix .settings-param__descr { color: #00ff41 !important; font-family: monospace !important; }',
-                'body.theme-matrix .selectbox-item.focus, body.theme-matrix .selectbox-item:hover { background: rgba(0,255,65,.2) !important; color: #fff !important; }',
-                'body.theme-matrix .simple-button { background: #000 !important; border: 1px solid #00ff41 !important; color: #00ff41 !important; font-family: monospace !important; }',
-                'body.theme-matrix .menu__ico svg, body.theme-matrix .head__action svg { color: #00ff41 !important; }'
+                'body.theme-cinema .wrap__left { width: 0 !important; min-width: 0 !important; overflow: hidden !important; }',
+                'body.theme-cinema .scroll--horizontal { overflow: visible !important; height: auto !important; }',
+                'body.theme-cinema .items-cards.mapping--line {',
+                '   display: grid !important;',
+                '   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;',
+                '   gap: 32px !important;',
+                '   width: 100% !important;',
+                '   padding: 0 60px !important;',
+                '   transform: none !important;',
+                '   white-space: normal !important;',
+                '}',
+                'body.theme-cinema .mapping--grid { grid-template-columns: repeat(3, minmax(0,1fr)) !important; gap: 32px !important; }',
+                'body.theme-cinema .card { width: 100% !important; min-width: 0 !important; transition: transform .3s !important; }',
+                'body.theme-cinema .card.focus, body.theme-cinema .card:hover { transform: scale(1.03) !important; z-index: 2 !important; }',
+                'body.theme-cinema .card__view { width: 100% !important; aspect-ratio: 16 / 9 !important; height: auto !important; border-radius: 14px !important; overflow: hidden !important; box-shadow: 0 20px 60px rgba(0,0,0,.6) !important; }',
+                'body.theme-cinema .card__img { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; }',
+                'body.theme-cinema .card__title { font-size: 1.5em !important; font-weight: 700 !important; margin-top: 14px !important; letter-spacing: -.02em !important; }',
+                'body.theme-cinema .card__age { font-size: 1.05em !important; opacity: .7 !important; }',
+                'body.theme-cinema .card__vote { font-size: 1.1em !important; padding: .3em .8em !important; top: 16px !important; left: 16px !important; }',
+                'body.theme-cinema .items-line__title { font-size: 1.6em !important; font-weight: 800 !important; }',
+                'body.theme-cinema .head__title { font-size: 1.2em !important; }'
             ].join('')
         },
 
-        // ----- 5. Кровавая луна -----
-        blood: {
-            name: '🩸 Кровавая Луна',
+        // =====================================================================
+        // 6. ПОЛАРОИД — карточки как винтажные фото с белой рамкой и тенью
+        // =====================================================================
+        polaroid: {
+            name: '📷 Полароид',
             css: [
-                'body.theme-blood { background: radial-gradient(ellipse at top, #2a0000 0%, #0a0000 70%, #000 100%) !important; color: #ffe0e0 !important; }',
-                'body.theme-blood .head, body.theme-blood .head__body { background: rgba(20,0,0,.85) !important; border-bottom: 1px solid #8b0000 !important; box-shadow: 0 0 25px rgba(139,0,0,.5) !important; }',
-                'body.theme-blood .head__title { color: #ff2020 !important; text-shadow: 0 0 15px rgba(255,32,32,.7) !important; }',
-                'body.theme-blood .menu, body.theme-blood .wrap__left { background: rgba(15,0,0,.9) !important; border-right: 1px solid rgba(139,0,0,.5) !important; }',
-                'body.theme-blood .menu__item { color: #ffe0e0 !important; }',
-                'body.theme-blood .menu__item.focus, body.theme-blood .menu__item:hover { background: linear-gradient(90deg, rgba(139,0,0,.4), rgba(255,0,0,.1)) !important; border-left: 3px solid #ff2020 !important; color: #fff !important; }',
-                'body.theme-blood .card { border: 1px solid rgba(139,0,0,.4) !important; }',
-                'body.theme-blood .card.focus, body.theme-blood .card:hover { border-color: #ff2020 !important; box-shadow: 0 0 25px rgba(255,32,32,.5), inset 0 0 20px rgba(139,0,0,.2) !important; }',
-                'body.theme-blood .card__title { color: #ff6060 !important; }',
-                'body.theme-blood .card__age { color: #8b0000 !important; }',
-                'body.theme-blood .card__vote { background: #8b0000 !important; color: #fff !important; font-weight: bold !important; }',
-                'body.theme-blood .settings, body.theme-blood .modal__content, body.theme-blood .selectbox__content { background: linear-gradient(180deg, #1a0000 0%, #000 100%) !important; border: 1px solid rgba(139,0,0,.5) !important; }',
-                'body.theme-blood .selectbox-item.focus, body.theme-blood .selectbox-item:hover { background: rgba(139,0,0,.4) !important; color: #fff !important; }',
-                'body.theme-blood .simple-button { background: linear-gradient(135deg, #8b0000, #2a0000) !important; border: 1px solid #ff2020 !important; color: #fff !important; }',
-                'body.theme-blood .menu__ico svg { color: #ff2020 !important; }'
+                'body.theme-polaroid .scroll--horizontal { overflow: visible !important; height: auto !important; }',
+                'body.theme-polaroid .items-cards.mapping--line {',
+                '   display: grid !important;',
+                '   grid-template-columns: repeat(5, minmax(0, 1fr)) !important;',
+                '   gap: 30px !important;',
+                '   width: 100% !important;',
+                '   padding: 40px 30px !important;',
+                '   transform: none !important;',
+                '   white-space: normal !important;',
+                '}',
+                'body.theme-polaroid .mapping--grid { grid-template-columns: repeat(5, minmax(0,1fr)) !important; gap: 30px !important; }',
+                'body.theme-polaroid .card {',
+                '   width: 100% !important; min-width: 0 !important;',
+                '   background: #fdfdf5 !important;',
+                '   padding: 12px 12px 44px 12px !important;',
+                '   border-radius: 3px !important;',
+                '   box-shadow: 0 8px 24px rgba(0,0,0,.35), 0 2px 6px rgba(0,0,0,.2) !important;',
+                '   transform: rotate(-2deg) !important;',
+                '   transition: transform .3s, box-shadow .3s !important;',
+                '   box-sizing: border-box !important;',
+                '}',
+                'body.theme-polaroid .card:nth-child(even) { transform: rotate(2deg) !important; }',
+                'body.theme-polaroid .card:nth-child(3n) { transform: rotate(-1deg) !important; }',
+                'body.theme-polaroid .card.focus, body.theme-polaroid .card:hover {',
+                '   transform: rotate(0) scale(1.08) !important;',
+                '   box-shadow: 0 16px 40px rgba(0,0,0,.5), 0 4px 12px rgba(0,0,0,.3) !important;',
+                '   z-index: 3 !important;',
+                '}',
+                'body.theme-polaroid .card__view { width: 100% !important; aspect-ratio: 1 / 1 !important; height: auto !important; border-radius: 0 !important; overflow: hidden !important; background: #000 !important; }',
+                'body.theme-polaroid .card__img { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; filter: sepia(.15) contrast(1.05) saturate(.9) !important; }',
+                'body.theme-polaroid .card__title { color: #2a2a2a !important; font-family: "Courier New", monospace !important; font-size: .95em !important; margin-top: 12px !important; text-align: center !important; font-weight: 700 !important; }',
+                'body.theme-polaroid .card__age { color: #6a6a6a !important; font-family: "Courier New", monospace !important; font-size: .85em !important; text-align: center !important; }',
+                'body.theme-polaroid .card__vote { color: #c0392b !important; font-family: "Courier New", monospace !important; }',
+                'body.theme-polaroid .card__type, body.theme-polaroid .card__quality { display: none !important; }',
+                'body.theme-polaroid { background: #2b2620 !important; }'
             ].join('')
         },
 
-        // ----- 6. Северное сияние -----
-        aurora: {
-            name: '🌌 Северное Сияние',
+        // =====================================================================
+        // 7. КВАДРАТЫ — карточки с квадратным постером 6 в ряд
+        // =====================================================================
+        squares: {
+            name: '◼ Квадраты',
             css: [
-                'body.theme-aurora { background: linear-gradient(180deg, #0a1628 0%, #0d2a3a 40%, #1a4a5a 70%, #0a1628 100%) !important; color: #d0f0ff !important; }',
-                'body.theme-aurora .head, body.theme-aurora .head__body { background: rgba(10,22,40,.8) !important; border-bottom: 1px solid rgba(0,255,200,.3) !important; }',
-                'body.theme-aurora .head__title { background: linear-gradient(90deg, #00ff9d, #00c8ff, #b800ff); -webkit-background-clip: text !important; background-clip: text !important; color: transparent !important; font-weight: bold !important; }',
-                'body.theme-aurora .menu, body.theme-aurora .wrap__left { background: rgba(10,22,40,.85) !important; }',
-                'body.theme-aurora .menu__item { color: #d0f0ff !important; }',
-                'body.theme-aurora .menu__item.focus, body.theme-aurora .menu__item:hover { background: linear-gradient(90deg, rgba(0,255,157,.25), rgba(0,200,255,.15), rgba(184,0,255,.1)) !important; color: #fff !important; }',
-                'body.theme-aurora .card { border: 1px solid rgba(0,200,255,.3) !important; }',
-                'body.theme-aurora .card.focus, body.theme-aurora .card:hover { border-color: #00ff9d !important; box-shadow: 0 0 30px rgba(0,255,157,.5), 0 0 60px rgba(184,0,255,.3) !important; transform: translateY(-3px) !important; }',
-                'body.theme-aurora .card__title { color: #7fffd4 !important; }',
-                'body.theme-aurora .card__age { color: #b800ff !important; }',
-                'body.theme-aurora .settings, body.theme-aurora .modal__content, body.theme-aurora .selectbox__content { background: linear-gradient(180deg, #0a1628, #041020) !important; border: 1px solid rgba(0,200,255,.3) !important; }',
-                'body.theme-aurora .selectbox-item.focus, body.theme-aurora .selectbox-item:hover { background: linear-gradient(90deg, rgba(0,255,157,.2), rgba(0,200,255,.1)) !important; color: #fff !important; }',
-                'body.theme-aurora .simple-button { background: linear-gradient(135deg, #00ff9d, #00c8ff) !important; color: #0a1628 !important; font-weight: bold !important; }',
-                'body.theme-aurora .menu__ico svg { color: #00ff9d !important; filter: drop-shadow(0 0 6px rgba(0,255,157,.8)) !important; }'
+                'body.theme-squares .scroll--horizontal { overflow: visible !important; height: auto !important; }',
+                'body.theme-squares .items-cards.mapping--line {',
+                '   display: grid !important;',
+                '   grid-template-columns: repeat(6, minmax(0, 1fr)) !important;',
+                '   gap: 14px !important;',
+                '   width: 100% !important;',
+                '   padding: 0 24px !important;',
+                '   transform: none !important;',
+                '   white-space: normal !important;',
+                '}',
+                'body.theme-squares .mapping--grid { grid-template-columns: repeat(6, minmax(0,1fr)) !important; gap: 14px !important; }',
+                'body.theme-squares .card { width: 100% !important; min-width: 0 !important; }',
+                'body.theme-squares .card__view { width: 100% !important; aspect-ratio: 1 / 1 !important; height: auto !important; border-radius: 50% !important; overflow: hidden !important; box-shadow: 0 8px 24px rgba(0,0,0,.4) !important; }',
+                'body.theme-squares .card__img { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; }',
+                'body.theme-squares .card.focus .card__view, body.theme-squares .card:hover .card__view { box-shadow: 0 0 0 4px #ff6ec7, 0 12px 32px rgba(255,110,199,.5) !important; }',
+                'body.theme-squares .card__title { text-align: center !important; font-size: .9em !important; margin-top: 10px !important; }',
+                'body.theme-squares .card__age { text-align: center !important; font-size: .8em !important; opacity: .6 !important; }',
+                'body.theme-squares .card__vote, body.theme-squares .card__type, body.theme-squares .card__quality { display: none !important; }'
             ].join('')
         },
 
-        // ----- 7. Золото -----
-        gold: {
-            name: '✨ Чёрное Золото',
+        // =====================================================================
+        // 8. МОЗАИКА — 1-й элемент большой, остальные мелкие
+        // =====================================================================
+        mosaic: {
+            name: '🧩 Мозаика',
             css: [
-                'body.theme-gold { background: #0a0a0a !important; color: #f5e6c8 !important; }',
-                'body.theme-gold .head, body.theme-gold .head__body { background: linear-gradient(180deg, #1a1408 0%, #0a0a0a 100%) !important; border-bottom: 1px solid #d4af37 !important; box-shadow: 0 2px 20px rgba(212,175,55,.3) !important; }',
-                'body.theme-gold .head__title { background: linear-gradient(180deg, #f5e6c8, #d4af37, #8b6914); -webkit-background-clip: text !important; background-clip: text !important; color: transparent !important; font-weight: bold !important; letter-spacing: 1px !important; }',
-                'body.theme-gold .menu, body.theme-gold .wrap__left { background: linear-gradient(180deg, #1a1408 0%, #0a0a0a 100%) !important; border-right: 1px solid rgba(212,175,55,.3) !important; }',
-                'body.theme-gold .menu__item { color: #f5e6c8 !important; }',
-                'body.theme-gold .menu__item.focus, body.theme-gold .menu__item:hover { background: linear-gradient(90deg, rgba(212,175,55,.25), rgba(212,175,55,.05)) !important; border-left: 3px solid #d4af37 !important; color: #fff !important; }',
-                'body.theme-gold .card { border: 1px solid rgba(212,175,55,.4) !important; }',
-                'body.theme-gold .card.focus, body.theme-gold .card:hover { border-color: #d4af37 !important; box-shadow: 0 0 25px rgba(212,175,55,.6), 0 0 50px rgba(212,175,55,.3) !important; }',
-                'body.theme-gold .card__title { color: #d4af37 !important; }',
-                'body.theme-gold .card__age { color: #8b6914 !important; }',
-                'body.theme-gold .card__vote { background: linear-gradient(135deg, #d4af37, #f5e6c8) !important; color: #0a0a0a !important; font-weight: bold !important; }',
-                'body.theme-gold .settings, body.theme-gold .modal__content, body.theme-gold .selectbox__content { background: linear-gradient(180deg, #1a1408, #0a0a0a) !important; border: 1px solid rgba(212,175,55,.4) !important; }',
-                'body.theme-gold .settings-param__name { color: #f5e6c8 !important; }',
-                'body.theme-gold .settings-param__value { color: #d4af37 !important; }',
-                'body.theme-gold .selectbox-item.focus, body.theme-gold .selectbox-item:hover { background: linear-gradient(90deg, rgba(212,175,55,.2), transparent) !important; color: #fff !important; }',
-                'body.theme-gold .simple-button { background: linear-gradient(135deg, #d4af37, #8b6914) !important; color: #0a0a0a !important; font-weight: bold !important; }',
-                'body.theme-gold .menu__ico svg { color: #d4af37 !important; }'
+                'body.theme-mosaic .scroll--horizontal { overflow: visible !important; height: auto !important; }',
+                'body.theme-mosaic .items-cards.mapping--line {',
+                '   display: grid !important;',
+                '   grid-template-columns: repeat(4, minmax(0, 1fr)) !important;',
+                '   grid-auto-rows: 180px !important;',
+                '   gap: 14px !important;',
+                '   width: 100% !important;',
+                '   padding: 0 24px !important;',
+                '   transform: none !important;',
+                '   white-space: normal !important;',
+                '}',
+                'body.theme-mosaic .card { width: 100% !important; min-width: 0 !important; grid-row: span 1 !important; }',
+                'body.theme-mosaic .card:nth-child(6n+1) { grid-column: span 2 !important; grid-row: span 2 !important; }',
+                'body.theme-mosaic .card:nth-child(6n+4) { grid-column: span 2 !important; grid-row: span 1 !important; }',
+                'body.theme-mosaic .card__view { width: 100% !important; height: 100% !important; aspect-ratio: auto !important; border-radius: 8px !important; overflow: hidden !important; }',
+                'body.theme-mosaic .card__img { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; }',
+                'body.theme-mosaic .card__title, body.theme-mosaic .card__age { position: absolute !important; z-index: 2 !important; text-shadow: 0 1px 6px rgba(0,0,0,.9) !important; }',
+                'body.theme-mosaic .card__title { bottom: 30px !important; left: 12px !important; right: 12px !important; margin: 0 !important; font-weight: 700 !important; }',
+                'body.theme-mosaic .card__age { bottom: 10px !important; left: 12px !important; margin: 0 !important; font-size: .85em !important; }',
+                'body.theme-mosaic .card__view::after { content: "" !important; position: absolute !important; inset: 0 !important; background: linear-gradient(180deg, transparent 45%, rgba(0,0,0,.85) 100%) !important; pointer-events: none !important; }'
             ].join('')
         },
 
-        // ----- 8. Монохром -----
-        monochrome: {
-            name: '⚫ Монохром',
+        // =====================================================================
+        // 9. МИНИМАЛ — текст вместо постеров, тонкие линии, без иконок
+        // =====================================================================
+        minimal: {
+            name: '📝 Минимал',
             css: [
-                'body.theme-monochrome { background: #000 !important; color: #fff !important; filter: grayscale(1) contrast(1.1) !important; }',
-                'body.theme-monochrome .head, body.theme-monochrome .head__body { background: #fff !important; color: #000 !important; border-bottom: 3px solid #000 !important; }',
-                'body.theme-monochrome .head__title, body.theme-monochrome .head__time { color: #000 !important; font-weight: 900 !important; }',
-                'body.theme-monochrome .head svg { color: #000 !important; }',
-                'body.theme-monochrome .menu, body.theme-monochrome .wrap__left { background: #fff !important; border-right: 3px solid #000 !important; }',
-                'body.theme-monochrome .menu__item { color: #000 !important; font-weight: bold !important; }',
-                'body.theme-monochrome .menu__item.focus, body.theme-monochrome .menu__item:hover { background: #000 !important; color: #fff !important; }',
-                'body.theme-monochrome .menu__item.focus svg, body.theme-monochrome .menu__item:hover svg { color: #fff !important; }',
-                'body.theme-monochrome .card { border: 2px solid #fff !important; box-shadow: 0 4px 0 #fff !important; }',
-                'body.theme-monochrome .card.focus, body.theme-monochrome .card:hover { box-shadow: 0 0 0 4px #000, 0 0 0 6px #fff !important; }',
-                'body.theme-monochrome .card__title { color: #fff !important; font-weight: bold !important; }',
-                'body.theme-monochrome .card__age { color: #888 !important; }',
-                'body.theme-monochrome .card__vote { background: #fff !important; color: #000 !important; font-weight: 900 !important; }',
-                'body.theme-monochrome .settings, body.theme-monochrome .modal__content, body.theme-monochrome .selectbox__content { background: #fff !important; color: #000 !important; border: 3px solid #000 !important; }',
-                'body.theme-monochrome .settings-param__name, body.theme-monochrome .settings-param__value, body.theme-monochrome .settings-param__descr, body.theme-monochrome .modal__title { color: #000 !important; }',
-                'body.theme-monochrome .selectbox-item { color: #000 !important; }',
-                'body.theme-monochrome .selectbox-item.focus, body.theme-monochrome .selectbox-item:hover { background: #000 !important; color: #fff !important; }',
-                'body.theme-monochrome .simple-button { background: #000 !important; color: #fff !important; border: 2px solid #fff !important; font-weight: bold !important; }',
-                'body.theme-monochrome svg { color: inherit !important; }'
+                'body.theme-minimal { background: #f5f5f5 !important; color: #111 !important; }',
+                'body.theme-minimal .head { background: #f5f5f5 !important; border-bottom: 1px solid #111 !important; }',
+                'body.theme-minimal .head__title { color: #111 !important; letter-spacing: .1em !important; text-transform: uppercase !important; font-weight: 300 !important; }',
+                'body.theme-minimal .head svg { color: #111 !important; }',
+                'body.theme-minimal .wrap__left { background: #f5f5f5 !important; border-right: 1px solid #ccc !important; }',
+                'body.theme-minimal .menu__item { color: #111 !important; border-bottom: 1px solid #eee !important; padding: 14px 20px !important; }',
+                'body.theme-minimal .menu__item.focus, body.theme-minimal .menu__item:hover { background: #111 !important; color: #f5f5f5 !important; }',
+                'body.theme-minimal .menu__item.focus svg, body.theme-minimal .menu__item:hover svg { color: #f5f5f5 !important; }',
+                'body.theme-minimal .scroll--horizontal { overflow: visible !important; height: auto !important; }',
+                'body.theme-minimal .items-cards.mapping--line {',
+                '   display: grid !important;',
+                '   grid-template-columns: repeat(3, minmax(0, 1fr)) !important;',
+                '   gap: 0 !important;',
+                '   width: 100% !important;',
+                '   padding: 0 30px !important;',
+                '   transform: none !important;',
+                '   white-space: normal !important;',
+                '}',
+                'body.theme-minimal .mapping--grid { grid-template-columns: repeat(3, minmax(0,1fr)) !important; gap: 0 !important; }',
+                'body.theme-minimal .card {',
+                '   width: 100% !important; min-width: 0 !important;',
+                '   background: transparent !important;',
+                '   border-bottom: 1px solid #ddd !important;',
+                '   padding: 18px 12px !important;',
+                '   display: flex !important; flex-direction: column !important; justify-content: center !important;',
+                '   transition: background .15s !important;',
+                '}',
+                'body.theme-minimal .card.focus, body.theme-minimal .card:hover { background: #fff !important; }',
+                'body.theme-minimal .card__view { display: none !important; }',
+                'body.theme-minimal .card__title { display: block !important; color: #111 !important; font-weight: 600 !important; font-size: 1.05em !important; margin: 0 !important; line-height: 1.3 !important; }',
+                'body.theme-minimal .card__age { color: #888 !important; font-size: .85em !important; margin-top: 4px !important; }',
+                'body.theme-minimal .card__vote { color: #111 !important; font-weight: 700 !important; position: static !important; padding: 0 !important; background: none !important; margin-top: 6px !important; font-size: .9em !important; }',
+                'body.theme-minimal .card__type, body.theme-minimal .card__quality { display: none !important; }',
+                'body.theme-minimal .items-line__title { color: #111 !important; font-weight: 300 !important; letter-spacing: .15em !important; text-transform: uppercase !important; font-size: 1em !important; border-bottom: 1px solid #111 !important; padding-bottom: 8px !important; }',
+                'body.theme-minimal .settings, body.theme-minimal .modal__content, body.theme-minimal .selectbox__content { background: #f5f5f5 !important; color: #111 !important; border: 1px solid #111 !important; }',
+                'body.theme-minimal .settings-param__name, body.theme-minimal .modal__title, body.theme-minimal .selectbox-item { color: #111 !important; }',
+                'body.theme-minimal .settings-param.focus, body.theme-minimal .settings-param:hover, body.theme-minimal .selectbox-item.focus, body.theme-minimal .selectbox-item:hover { background: #111 !important; color: #f5f5f5 !important; }'
             ].join('')
         },
 
-        // ----- 9. Закат -----
-        sunset: {
-            name: '🌅 Тёплый Закат',
+        // =====================================================================
+        // 10. ЖУРНАЛ — крупный первый элемент, остальные мелкие, заголовки большие
+        // =====================================================================
+        magazine: {
+            name: '📰 Журнал',
             css: [
-                'body.theme-sunset { background: linear-gradient(180deg, #1a0a2e 0%, #4a1942 30%, #c9184a 60%, #ff9505 90%, #ffb703 100%) !important; color: #fff5e1 !important; }',
-                'body.theme-sunset .head, body.theme-sunset .head__body { background: linear-gradient(180deg, rgba(26,10,46,.85), rgba(74,25,66,.75)) !important; border-bottom: 1px solid #ff9505 !important; box-shadow: 0 2px 20px rgba(255,149,5,.3) !important; }',
-                'body.theme-sunset .head__title { background: linear-gradient(90deg, #ffb703, #ff9505, #c9184a); -webkit-background-clip: text !important; background-clip: text !important; color: transparent !important; font-weight: bold !important; }',
-                'body.theme-sunset .menu, body.theme-sunset .wrap__left { background: linear-gradient(180deg, rgba(26,10,46,.9), rgba(74,25,66,.85)) !important; }',
-                'body.theme-sunset .menu__item { color: #fff5e1 !important; }',
-                'body.theme-sunset .menu__item.focus, body.theme-sunset .menu__item:hover { background: linear-gradient(90deg, rgba(255,149,5,.3), rgba(201,24,74,.15)) !important; border-left: 3px solid #ff9505 !important; color: #fff !important; }',
-                'body.theme-sunset .card { border: 1px solid rgba(255,149,5,.35) !important; }',
-                'body.theme-sunset .card.focus, body.theme-sunset .card:hover { border-color: #ffb703 !important; box-shadow: 0 0 30px rgba(255,183,3,.6), 0 0 60px rgba(201,24,74,.4) !important; transform: translateY(-3px) !important; }',
-                'body.theme-sunset .card__title { color: #ffb703 !important; }',
-                'body.theme-sunset .card__age { color: #c9184a !important; }',
-                'body.theme-sunset .card__vote { background: linear-gradient(135deg, #ffb703, #c9184a) !important; color: #fff !important; font-weight: bold !important; }',
-                'body.theme-sunset .settings, body.theme-sunset .modal__content, body.theme-sunset .selectbox__content { background: linear-gradient(180deg, #1a0a2e, #0a0418) !important; border: 1px solid rgba(255,149,5,.4) !important; }',
-                'body.theme-sunset .selectbox-item.focus, body.theme-sunset .selectbox-item:hover { background: linear-gradient(90deg, rgba(255,149,5,.25), rgba(201,24,74,.1)) !important; color: #fff !important; }',
-                'body.theme-sunset .simple-button { background: linear-gradient(135deg, #ff9505, #c9184a) !important; color: #fff !important; font-weight: bold !important; }',
-                'body.theme-sunset .menu__ico svg { color: #ffb703 !important; filter: drop-shadow(0 0 6px rgba(255,183,3,.7)) !important; }'
-            ].join('')
-        },
-
-        // ----- 10. Ледник -----
-        ice: {
-            name: '❄️ Ледник',
-            css: [
-                'body.theme-ice { background: linear-gradient(180deg, #e8f4ff 0%, #c9e4ff 50%, #a8d4f0 100%) !important; color: #0a2540 !important; }',
-                'body.theme-ice .head, body.theme-ice .head__body { background: rgba(232,244,255,.85) !important; border-bottom: 2px solid #4a90e2 !important; box-shadow: 0 2px 15px rgba(74,144,226,.2) !important; }',
-                'body.theme-ice .head__title { color: #0a2540 !important; font-weight: bold !important; }',
-                'body.theme-ice .head__time { color: #4a90e2 !important; }',
-                'body.theme-ice .head svg { color: #0a2540 !important; }',
-                'body.theme-ice .menu, body.theme-ice .wrap__left { background: linear-gradient(180deg, #e8f4ff, #c9e4ff) !important; border-right: 1px solid rgba(74,144,226,.3) !important; }',
-                'body.theme-ice .menu__item { color: #0a2540 !important; }',
-                'body.theme-ice .menu__item.focus, body.theme-ice .menu__item:hover { background: linear-gradient(90deg, rgba(74,144,226,.3), rgba(74,144,226,.1)) !important; border-left: 3px solid #4a90e2 !important; color: #0a2540 !important; }',
-                'body.theme-ice .menu__ico svg { color: #4a90e2 !important; }',
-                'body.theme-ice .card { border: 1px solid rgba(74,144,226,.4) !important; box-shadow: 0 4px 15px rgba(74,144,226,.15) !important; background: rgba(255,255,255,.5) !important; }',
-                'body.theme-ice .card.focus, body.theme-ice .card:hover { border-color: #4a90e2 !important; box-shadow: 0 0 30px rgba(74,144,226,.5), 0 0 60px rgba(74,144,226,.2) !important; transform: translateY(-3px) !important; }',
-                'body.theme-ice .card__title { color: #0a2540 !important; font-weight: 600 !important; }',
-                'body.theme-ice .card__age { color: #4a90e2 !important; }',
-                'body.theme-ice .card__vote { background: linear-gradient(135deg, #4a90e2, #7eb8ff) !important; color: #fff !important; font-weight: bold !important; }',
-                'body.theme-ice .settings, body.theme-ice .modal__content, body.theme-ice .selectbox__content { background: linear-gradient(180deg, #f0f8ff, #d6ecff) !important; border: 1px solid rgba(74,144,226,.3) !important; box-shadow: 0 4px 30px rgba(74,144,226,.2) !important; }',
-                'body.theme-ice .settings-param__name, body.theme-ice .modal__title { color: #0a2540 !important; }',
-                'body.theme-ice .settings-param__value { color: #4a90e2 !important; }',
-                'body.theme-ice .settings-param__descr { color: #5a7a99 !important; }',
-                'body.theme-ice .selectbox-item.focus, body.theme-ice .selectbox-item:hover { background: linear-gradient(90deg, rgba(74,144,226,.25), rgba(74,144,226,.08)) !important; color: #0a2540 !important; }',
-                'body.theme-ice .simple-button, body.theme-ice .full-start__button { background: linear-gradient(135deg, #4a90e2, #7eb8ff) !important; color: #fff !important; font-weight: bold !important; border: none !important; }'
+                'body.theme-magazine .scroll--horizontal { overflow: visible !important; height: auto !important; }',
+                'body.theme-magazine .items-cards.mapping--line {',
+                '   display: grid !important;',
+                '   grid-template-columns: repeat(3, minmax(0, 1fr)) !important;',
+                '   gap: 20px !important;',
+                '   width: 100% !important;',
+                '   padding: 0 40px !important;',
+                '   transform: none !important;',
+                '   white-space: normal !important;',
+                '}',
+                'body.theme-magazine .card { width: 100% !important; min-width: 0 !important; display: flex !important; flex-direction: column !important; }',
+                'body.theme-magazine .card:nth-child(1) { grid-column: span 2 !important; grid-row: span 2 !important; }',
+                'body.theme-magazine .card__view { width: 100% !important; aspect-ratio: 3 / 4 !important; height: auto !important; border-radius: 4px !important; overflow: hidden !important; }',
+                'body.theme-magazine .card:nth-child(1) .card__view { aspect-ratio: 16 / 10 !important; }',
+                'body.theme-magazine .card__img { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; object-fit: cover !important; }',
+                'body.theme-magazine .card__title { font-family: Georgia, "Times New Roman", serif !important; font-weight: 700 !important; font-size: 1.05em !important; margin: 12px 0 4px !important; letter-spacing: -.01em !important; line-height: 1.25 !important; }',
+                'body.theme-magazine .card:nth-child(1) .card__title { font-size: 2em !important; }',
+                'body.theme-magazine .card__age { font-size: .85em !important; opacity: .6 !important; text-transform: uppercase !important; letter-spacing: .1em !important; }',
+                'body.theme-magazine .card__vote { top: 12px !important; left: 12px !important; font-weight: 700 !important; }',
+                'body.theme-magazine .items-line__title { font-family: Georgia, serif !important; font-size: 1.8em !important; font-weight: 700 !important; letter-spacing: -.02em !important; }',
+                // Меню в виде горизонтальной полосы сверху
+                'body.theme-magazine .head { background: #0d0d0d !important; border-bottom: 2px solid #fff !important; }',
+                'body.theme-magazine .head__title { font-family: Georgia, serif !important; letter-spacing: .15em !important; text-transform: uppercase !important; }'
             ].join('')
         }
     };
 
     // =========================================================================
-    // Применение темы
+    // Инъекция стилей
     // =========================================================================
     function buildCSS() {
         var out = '';
-        for (var id in THEMES) {
-            out += THEMES[id].css;
-        }
+        for (var id in THEMES) out += THEMES[id].css;
         return out;
     }
 
     function injectStyles() {
-        var existing = document.getElementById(STYLE_ID);
-        if (existing) existing.remove();
+        var old = document.getElementById(STYLE_ID);
+        if (old) old.remove();
         var style = document.createElement('style');
         style.id = STYLE_ID;
         style.type = 'text/css';
@@ -262,23 +353,23 @@
     }
 
     function applyTheme(id) {
-        if (!THEMES[id]) {
-            // откат на первую тему если неизвестная
-            id = Object.keys(THEMES)[0];
-        }
-        // Убираем все theme-* классы
+        if (!THEMES[id]) id = 'standard';
+
         var classes = (document.body.className || '').split(/\s+/).filter(function (c) {
             return c && c.indexOf('theme-') !== 0;
         });
-        classes.push('theme-' + id);
+
+        if (id !== 'standard') {
+            classes.push('theme-' + id);
+        }
+
         document.body.className = classes.join(' ');
 
         try { localStorage.setItem(ACTIVE_KEY, id); } catch (e) {}
-        Lampa.Listener.send('theme_pack_changed', { theme: id });
     }
 
     // =========================================================================
-    // Регистрация в настройках
+    // Настройки
     // =========================================================================
     function registerSettings() {
         var values = {};
@@ -291,11 +382,10 @@
         Lampa.SettingsApi.addComponent({
             component: 'theme_pack',
             icon: '<svg width="39" height="39" viewBox="0 0 39 39" fill="none" xmlns="http://www.w3.org/2000/svg">'
-                + '<circle cx="19.5" cy="19.5" r="17" stroke="white" stroke-width="3"/>'
-                + '<path d="M19.5 2.5C10.1 2.5 2.5 10.1 2.5 19.5C2.5 28.9 10.1 36.5 19.5 36.5V2.5Z" fill="white"/>'
-                + '<circle cx="28" cy="12" r="2.5" fill="white"/>'
-                + '<circle cx="30" cy="22" r="2" fill="white"/>'
-                + '</svg>',
+                + '<rect x="2" y="2" width="15" height="15" rx="2" stroke="white" stroke-width="2.5"/>'
+                + '<rect x="22" y="2" width="15" height="15" rx="2" stroke="white" stroke-width="2.5"/>'
+                + '<rect x="2" y="22" width="15" height="15" rx="2" stroke="white" stroke-width="2.5"/>'
+                + '<rect x="22" y="22" width="15" height="15" rx="2" fill="white"/></svg>',
             name: 'Темы оформления',
             after: 'interface'
         });
@@ -306,11 +396,11 @@
                 name: 'theme_pack_choice',
                 type: 'select',
                 values: values,
-                'default': order[0]
+                'default': 'standard'
             },
             field: {
                 name: 'Выбор темы',
-                description: 'Кардинально меняет внешний вид приложения. Применяется мгновенно.'
+                description: 'Кардинально меняет раскладку карточек, меню и шапки. Применяется мгновенно.'
             },
             onChange: function (value) {
                 applyTheme(value);
@@ -321,40 +411,23 @@
 
         Lampa.SettingsApi.addParam({
             component: 'theme_pack',
-            param: {
-                type: 'title'
-            },
-            field: {
-                name: 'Действия'
-            }
+            param: { type: 'title' },
+            field: { name: 'Действия' }
         });
 
         Lampa.SettingsApi.addParam({
             component: 'theme_pack',
-            param: {
-                name: 'theme_pack_reset',
-                type: 'button'
-            },
+            param: { name: 'theme_pack_reset', type: 'button' },
             field: {
-                name: 'Сбросить тему',
-                description: 'Вернуться к исходному оформлению Lampa'
+                name: 'Вернуть стандартную тему',
+                description: 'Сбросить все изменения раскладки'
             },
             onChange: function () {
-                applyTheme(order[0]);
-                Lampa.Storage.set('theme_pack_choice', order[0]);
-                Lampa.Noty.show('Тема сброшена');
+                applyTheme('standard');
+                Lampa.Storage.set('theme_pack_choice', 'standard');
+                Lampa.Noty.show('Стандартная тема восстановлена');
             }
         });
-
-        // Восстанавливаем сохранённую тему при старте
-        var saved = localStorage.getItem(ACTIVE_KEY);
-        if (saved && THEMES[saved]) {
-            // Синхронизируем параметр с localStorage
-            if (Lampa.Storage.get('theme_pack_choice') !== saved) {
-                Lampa.Storage.set('theme_pack_choice', saved, true);
-            }
-            applyTheme(saved);
-        }
     }
 
     // =========================================================================
@@ -368,16 +441,17 @@
     function init() {
         injectStyles();
 
-        // Применяем сохранённую тему как можно раньше
         var saved = localStorage.getItem(ACTIVE_KEY);
         if (saved && THEMES[saved]) {
             applyTheme(saved);
+            // синхронизируем настройку
+            if (Lampa.Storage.get('theme_pack_choice') !== saved) {
+                Lampa.Storage.set('theme_pack_choice', saved, true);
+            }
         }
 
-        // Регистрируем настройки
         registerSettings();
 
-        // Подписка на событие "ready" — на случай сброса Storage
         Lampa.Listener.follow('app', function (e) {
             if (e.type === 'ready') {
                 var s = localStorage.getItem(ACTIVE_KEY);
@@ -385,9 +459,8 @@
             }
         });
 
-        // Информируем пользователя
         try {
-            Lampa.Noty.show('Плагин "Темы оформления" загружен: ' + Object.keys(THEMES).length + ' тем');
+            Lampa.Noty.show('Плагин «Темы» загружен — ' + (Object.keys(THEMES).length) + ' тем');
         } catch (e) {}
     }
 
