@@ -51,20 +51,51 @@
     { id: 7295, name: 'Constantin Film' }
   ];
 
-  /* ============================================================
-     Страница «Ужасы» — список: Студии + поджанры
-     ============================================================ */
-  function openHorrorPage() {
-    var items = [{
-      title: '🎬 Студии хорроров',
-      studios: true
-    }];
+  /* Открыть страницу с фильмами по параметрам */
+  function openCategory(title, params) {
+    var activity = {
+      url: 'discover/movie',
+      title: title,
+      component: 'category_full',
+      source: 'tmdb',
+      page: 1
+    };
+    for (var k in params) {
+      if (Object.prototype.hasOwnProperty.call(params, k)) activity[k] = params[k];
+    }
+    Lampa.Activity.push(activity);
+  }
 
+  /* Список студий */
+  function openStudiosPage() {
+    var enabled = Lampa.Controller.enabled().name;
+    var items = studios.map(function (s) {
+      return { title: s.name, studio: s };
+    });
+
+    Lampa.Select.show({
+      title: 'Студии хорроров',
+      items: items,
+      onSelect: function (item) {
+        openCategory(item.studio.name, {
+          genres: GENRE_HORROR,
+          companies: item.studio.id,
+          sort_by: 'popularity.desc'
+        });
+      },
+      onBack: function () {
+        Lampa.Controller.toggle(enabled);
+      }
+    });
+  }
+
+  /* Главная страница «Ужасы» */
+  function openHorrorPage() {
+    var enabled = Lampa.Controller.enabled().name;
+
+    var items = [{ title: '🎬 Студии хорроров', studios: true }];
     subgenres.forEach(function (sg) {
-      items.push({
-        title: sg.title,
-        kw: sg.kw
-      });
+      items.push({ title: sg.title, kw: sg.kw });
     });
 
     Lampa.Select.show({
@@ -74,88 +105,53 @@
         if (item.studios) {
           openStudiosPage();
         } else {
-          Lampa.Activity.push({
-            url: 'discover/movie',
-            title: 'Ужасы: ' + item.title,
-            component: 'category_full',
+          openCategory('Ужасы: ' + item.title, {
             genres: GENRE_HORROR,
-            keywords: item.kw,
-            source: 'tmdb',
-            page: 1
+            keywords: item.kw
           });
         }
       },
       onBack: function () {
-        try { Lampa.Controller.toggle('content'); } catch (e) {}
+        Lampa.Controller.toggle(enabled);
       }
     });
   }
 
-  /* ============================================================
-     Страница «Студии хорроров»
-     ============================================================ */
-  function openStudiosPage() {
-    var items = studios.map(function (s) {
-      return {
-        title: s.name,
-        studio: s
-      };
-    });
-
-    Lampa.Select.show({
-      title: 'Студии хорроров',
-      items: items,
-      onSelect: function (item) {
-        Lampa.Activity.push({
-          url: 'discover/movie',
-          title: item.studio.name,
-          component: 'category_full',
-          companies: item.studio.id,
-          genres: GENRE_HORROR,
-          sort_by: 'popularity.desc',
-          source: 'tmdb',
-          page: 1
-        });
-      },
-      onBack: openHorrorPage
-    });
-  }
-
-  /* ============================================================
-     Добавление одного пункта меню «Ужасы»
-     ============================================================ */
+  /* Добавить кнопку в меню (с колбэком!) */
   var menuAdded = false;
 
-  function addMenuButton() {
-    if (menuAdded) return;
-    if (!Lampa || !Lampa.Menu || typeof Lampa.Menu.addButton !== 'function') return;
+  function tryAddMenuButton() {
+    if (menuAdded) return true;
+    try {
+      if (!Lampa || !Lampa.Menu || typeof Lampa.Menu.addButton !== 'function') return false;
 
-    menuAdded = true;
+      // Вызов addButton с тремя аргументами — iконка, заголовок, обработчик
+      Lampa.Menu.addButton(ICON_HORROR, 'Ужасы', function () {
+        openHorrorPage();
+      });
 
-    var btn = Lampa.Menu.addButton(ICON_HORROR, 'Ужасы');
-    if (btn && btn.attr) btn.attr('data-action', 'horror-page');
+      menuAdded = true;
+      console.log('Horror plugin: menu button added');
+      return true;
+    } catch (e) {
+      console.log('Horror plugin: addMenuButton not ready yet:', e.message);
+      return false;
+    }
   }
 
-  /* ============================================================
-     Подписываемся на события меню:
-     - 'end'    → добавляем пункт
-     - 'action' → открываем страницу
-     ============================================================ */
+  // 1) Слушаем событие окончания инициализации меню
   Lampa.Listener.follow('menu', function (e) {
-    if (e.type === 'end') {
-      addMenuButton();
-    }
-    if (e.type === 'action' && e.action === 'horror-page') {
-      if (typeof e.abort === 'function') e.abort();
-      openHorrorPage();
-    }
+    if (e.type === 'end') tryAddMenuButton();
   });
 
-  /* ============================================================
-     Резервный вариант — если плагин загрузился после init меню
-     ============================================================ */
-  setTimeout(function () {
-    try { addMenuButton(); } catch (err) {}
-  }, 3000);
+  // 2) Пытаемся сразу — на случай, если меню уже готово
+  tryAddMenuButton();
+
+  // 3) Ретрай-цикл на случай гонки при загрузке плагина
+  var attempts = 0;
+  var iv = setInterval(function () {
+    attempts++;
+    if (tryAddMenuButton() || attempts > 60) clearInterval(iv);
+  }, 500);
 
 })();
