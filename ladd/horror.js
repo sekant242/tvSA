@@ -13,8 +13,6 @@
     var DEFAULT_GENRE = '27|53';
     var MENU_RETRY_INTERVAL = 500;
     var MENU_MAX_RETRIES = 40;
-    var TMDB_KEY = '4ef0d7355d9ffb5151e987764708ce96';
-    var TMDB_IMG = 'https://image.tmdb.org/t/p/';
 
     var ICON = '<svg width="26" height="28" viewBox="0 0 24 24" fill="none" ' +
         'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
@@ -72,21 +70,20 @@
         { id: 1800,   title: 'Паранойя' }
     ];
 
-    // Студии: логотипы грузятся из TMDB API, а не из Wikimedia.
-    // "minYear" — минимальный год выхода, чтобы отсечь старые фильмы
+    // ═══ ID ИСПРАВЛЕНЫ ═══
     var STUDIOS = [
-        { id: 3172,  title: 'Blumhouse',      minYear: 0 },
-        { id: 41077, title: 'A24',            minYear: 0 },
-        { id: 10330, title: 'Ghost House',    minYear: 0 },
-        { id: 8850,  title: 'Hammer Film',    minYear: 2000 },
-        { id: 22846, title: 'Dark Castle',    minYear: 0 },
-        { id: 90764, title: 'Neon',           minYear: 0 },
-        { id: 12,    title: 'New Line Cinema', minYear: 0 },
-        { id: 174,   title: 'Warner Bros.',   minYear: 0 },
-        { id: 33,    title: 'Universal',      minYear: 0 },
-        { id: 4,     title: 'Paramount',      minYear: 0 },
-        { id: 25,    title: '20th Century',   minYear: 0 },
-        { id: 10570, title: 'Orion Pictures', minYear: 0 }
+        { id: 3172,  title: 'Blumhouse' },
+        { id: 41077, title: 'A24' },
+        { id: 1314,  title: 'Hammer Film' },        // было 8850 — неверно
+        { id: 90733, title: 'Neon' },               // было 90764 — неверно
+        { id: 10330, title: 'Ghost House' },
+        { id: 22846, title: 'Dark Castle' },
+        { id: 12,    title: 'New Line Cinema' },
+        { id: 174,   title: 'Warner Bros.' },
+        { id: 33,    title: 'Universal' },
+        { id: 4,     title: 'Paramount' },
+        { id: 25,    title: '20th Century' },
+        { id: 10570, title: 'Orion Pictures' }
     ];
 
     var MULTI_FILTERS = [
@@ -106,61 +103,7 @@
         searchQuery: ''
     };
 
-    // Кэш логотипов: { studioId: logoUrl }
-    var logoCache = {};
-
-    // ═══════════════════════════════════════════════════════════════
-    // TMDB LOGO FETCHING
-    // ═══════════════════════════════════════════════════════════════
-
-    function fetchStudioLogo(studioId, callback) {
-        if (logoCache[studioId] !== undefined) {
-            callback(logoCache[studioId]);
-            return;
-        }
-
-        var url = 'https://api.themoviedb.org/3/company/' + studioId +
-                  '/images?api_key=' + TMDB_KEY;
-
-        var xhr = new XMLHttpRequest();
-        xhr.open('GET', url, true);
-        xhr.timeout = 8000;
-        xhr.responseType = 'json';
-
-        xhr.onload = function () {
-            var logo = null;
-            try {
-                var data = xhr.response;
-                if (data && data.logos && data.logos.length) {
-                    // Берём логотип с наибольшим разрешением
-                    var best = data.logos.sort(function (a, b) {
-                        return (b.width || 0) - (a.width || 0);
-                    })[0];
-                    if (best && best.file_path) {
-                        logo = TMDB_IMG + 'w300' + best.file_path;
-                    }
-                }
-            } catch (e) {}
-            logoCache[studioId] = logo;
-            callback(logo);
-        };
-
-        xhr.onerror = xhr.ontimeout = function () {
-            logoCache[studioId] = null;
-            callback(null);
-        };
-
-        xhr.send();
-    }
-
-    // Предзагрузка логотипов всех студий (фоном)
-    function preloadStudioLogos() {
-        STUDIOS.forEach(function (s) {
-            if (logoCache[s.id] === undefined) {
-                fetchStudioLogo(s.id, function () {});
-            }
-        });
-    }
+    var studioLogosCache = {}; // { id: 'full_url' | null }
 
     // ═══════════════════════════════════════════════════════════════
     // HELPERS
@@ -186,16 +129,8 @@
         var filter = {};
         if (state.languages.length) filter.with_original_language = state.languages.join('|');
         if (state.subgenres.length) filter.with_keywords = state.subgenres.join('|');
-
-        if (state.studio !== null) {
-            filter.with_companies = String(state.studio);
-            // Для Hammer Film — только фильмы после 2000 года
-            var s = STUDIOS.find(function (x) { return x.id === state.studio; });
-            if (s && s.minYear) {
-                filter['primary_release_date.gte'] = s.minYear + '-01-01';
-            }
-        }
-
+        // Для студий НЕ применяем жанровый фильтр — иначе Hammer и Neon пустые
+        if (state.studio !== null)  filter.with_companies = String(state.studio);
         return filter;
     }
 
@@ -208,18 +143,54 @@
             url: 'discover/movie',
             genres: state.genre,
             query: '',
-            filter: {}
+            filter: {},
+            sort_by: ''
         };
 
         if (state.searchQuery) {
             obj.url = 'search/movie';
             obj.query = encodeURIComponent(state.searchQuery);
             obj.genres = '';
-        } else {
-            obj.filter = buildFilterParams();
+            return obj;
         }
 
+        // При выборе студии: убираем жанр, сортируем по дате (старые первыми)
+        if (state.studio !== null) {
+            obj.genres = '';
+            obj.filter = { with_companies: String(state.studio) };
+            obj.sort_by = 'primary_release_date.asc';
+            return obj;
+        }
+
+        obj.filter = buildFilterParams();
         return obj;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // LOGO LOADING (через TMDB API)
+    // ═══════════════════════════════════════════════════════════════
+
+    function loadStudioLogos(callback) {
+        var key = Lampa.TMDB.key();
+        var ids = STUDIOS.map(function (s) { return s.id; });
+        var promises = ids.map(function (id) {
+            if (studioLogosCache.hasOwnProperty(id)) {
+                return Promise.resolve({ id: id, url: studioLogosCache[id] });
+            }
+            return fetch('https://api.themoviedb.org/3/company/' + id +
+                    '?api_key=' + key + '&language=ru')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    var url = data.logo_path
+                        ? 'https://image.tmdb.org/t/p/w200' + data.logo_path
+                        : null;
+                    studioLogosCache[id] = url;
+                    return { id: id, url: url };
+                })
+                .catch(function () { return { id: id, url: null }; });
+        });
+
+        Promise.all(promises).then(function () { callback(); });
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -242,15 +213,12 @@
             '.horror-filter-btn.focus{background:#fff;color:#000}',
             '.horror-filter-reset{background:rgba(220,60,60,.25);border-color:rgba(220,60,60,.4)}',
             '.horror-filter-count{opacity:.65;margin-left:.4em;font-size:.85em}',
-            '.horror-filter-logo{height:1.3em;width:auto;max-width:4em;object-fit:contain;',
+            '.horror-filter-logo{height:1.4em;width:auto;max-width:4em;object-fit:contain;',
             'vertical-align:middle;filter:brightness(0) invert(1)}',
             '.horror-filter-btn.focus .horror-filter-logo{filter:none}',
-            '.horror-studio-item .selectbox-item__icon{background:transparent!important;',
-            'display:flex;align-items:center;justify-content:center;min-width:2.5em}',
-            '.horror-studio-item .selectbox-item__icon img{height:1.8em;width:auto;max-width:6em;',
-            'object-fit:contain;filter:brightness(0) invert(1)}',
-            '.horror-studio-item .selectbox-item__icon .horror-logo-fallback{',
-            'font-size:.75em;opacity:.5;text-transform:uppercase;letter-spacing:.05em}'
+            '.horror-studio-item .selectbox-item__icon img{height:1.8em;width:auto;max-width:6em;object-fit:contain}',
+            '.horror-studio-item .selectbox-item__icon{background:transparent!important;padding:.3em}',
+            '.horror-studio-loading{opacity:.5;pointer-events:none}'
         ].join('');
         document.head.appendChild(style);
     }
@@ -272,9 +240,7 @@
                 Lampa.Controller.toggle('content');
                 onChange();
             },
-            onBack: function () {
-                Lampa.Controller.toggle('content');
-            }
+            onBack: function () { Lampa.Controller.toggle('content'); }
         });
     }
 
@@ -308,33 +274,53 @@
         });
     }
 
-    // Одиночный выбор студии с логотипами из TMDB API
+    // ═══ Студии: одиночный выбор + логотипы из TMDB ═══
     function openStudioFilter(onChange) {
-        var items = STUDIOS.map(function (s) {
-            var logo = logoCache[s.id];
-            var icon;
-            if (logo) {
-                icon = '<img src="' + logo + '" onerror="this.style.display=\'none\'">';
-            } else {
-                icon = '<span class="horror-logo-fallback">' + s.title.slice(0, 3) + '</span>';
-            }
-            return {
-                title: s.title,
-                id: s.id,
-                selected: state.studio === s.id,
-                template: 'selectbox_icon',
-                icon: icon,
-                _studio: true
-            };
-        });
+        var buildItems = function () {
+            var items = STUDIOS.map(function (s) {
+                var logoUrl = studioLogosCache[s.id];
+                var icon = logoUrl
+                    ? '<img src="' + logoUrl + '" onerror="this.style.display=\'none\'">'
+                    : '';
+                return {
+                    title: s.title,
+                    id: s.id,
+                    selected: state.studio === s.id,
+                    template: 'selectbox_icon',
+                    icon: icon || '<svg width="24" height="24"><use xlink:href="#sprite-movie"></use></svg>',
+                    _studio: true
+                };
+            });
 
-        items.unshift({
-            title: 'Любая',
-            id: null,
-            selected: state.studio === null,
-            template: 'selectbox_item'
-        });
+            items.unshift({
+                title: 'Любая',
+                id: null,
+                selected: state.studio === null,
+                template: 'selectbox_item'
+            });
 
+            return items;
+        };
+
+        // Если логотипы ещё не загружены — грузим и открываем после
+        if (Object.keys(studioLogosCache).length === 0) {
+            var loadingItems = [{ title: 'Загрузка...', id: null, template: 'selectbox_item' }];
+            Lampa.Select.show({
+                title: 'Студия',
+                items: loadingItems,
+                onBack: function () { Lampa.Controller.toggle('content'); }
+            });
+
+            loadStudioLogos(function () {
+                Lampa.Select.hide();
+                showStudioSelect(buildItems(), onChange);
+            });
+        } else {
+            showStudioSelect(buildItems(), onChange);
+        }
+    }
+
+    function showStudioSelect(items, onChange) {
         Lampa.Select.show({
             title: 'Студия',
             items: items,
@@ -344,25 +330,18 @@
                 onChange();
             },
             onDraw: function (item, elem) {
-                if (elem._studio) {
-                    item.addClass('horror-studio-item');
-                }
+                if (elem._studio) item.addClass('horror-studio-item');
             },
-            onBack: function () {
-                Lampa.Controller.toggle('content');
-            }
+            onBack: function () { Lampa.Controller.toggle('content'); }
         });
     }
 
     function openSearchInput(onChange) {
         var controller = Lampa.Controller.enabled().name;
-
         Lampa.Input.edit({
             title: 'Поиск по названию',
             value: state.searchQuery,
-            free: true,
-            nosave: true,
-            nomic: true
+            free: true, nosave: true, nomic: true
         }, function (value) {
             var newQuery = (value || '').trim();
             var wasChanged = newQuery !== state.searchQuery;
@@ -394,35 +373,35 @@
             var btn = document.createElement('div');
             btn.className = 'horror-filter-btn selector';
             btn.textContent = def.title;
-
             if (count > 0) {
                 var span = document.createElement('span');
                 span.className = 'horror-filter-count';
                 span.textContent = count;
                 btn.appendChild(span);
             }
-
             btn.addEventListener('click', function () { openMultiFilter(def, onChange); });
             bar.appendChild(btn);
         });
 
-        // Студия с логотипом из кэша
+        // Студия с логотипом на кнопке
         var studioBtn = document.createElement('div');
         studioBtn.className = 'horror-filter-btn selector';
         if (state.studio !== null) {
             var s = STUDIOS.find(function (x) { return x.id === state.studio; });
             if (s) {
-                var logo = logoCache[s.id];
-                if (logo) {
+                var logoUrl = studioLogosCache[s.id];
+                if (logoUrl) {
                     var img = document.createElement('img');
                     img.className = 'horror-filter-logo';
-                    img.src = logo;
+                    img.src = logoUrl;
                     img.onerror = function () { this.style.display = 'none'; };
                     studioBtn.appendChild(img);
                 }
                 var txt = document.createElement('span');
                 txt.textContent = s.title;
                 studioBtn.appendChild(txt);
+            } else {
+                studioBtn.textContent = 'Студия';
             }
         } else {
             studioBtn.textContent = 'Студия';
@@ -431,12 +410,11 @@
         bar.appendChild(studioBtn);
 
         // Поиск
-        var searchLabel = state.searchQuery
-            ? 'Поиск: ' + state.searchQuery.slice(0, 20)
-            : 'Поиск';
         var searchBtn = document.createElement('div');
         searchBtn.className = 'horror-filter-btn selector';
-        searchBtn.textContent = searchLabel;
+        searchBtn.textContent = state.searchQuery
+            ? 'Поиск: ' + state.searchQuery.slice(0, 20)
+            : 'Поиск';
         searchBtn.addEventListener('click', function () { openSearchInput(onChange); });
         bar.appendChild(searchBtn);
 
@@ -461,7 +439,6 @@
 
     function HorrorComponent(object) {
         injectStyles();
-        preloadStudioLogos();
 
         var activityObj = buildActivityObject();
         Object.keys(activityObj).forEach(function (k) {
@@ -474,12 +451,7 @@
         comp.use({
             onCreate: function () {
                 var _this = this;
-
-                Lampa.Api.list(
-                    object,
-                    this.build.bind(this),
-                    this.empty.bind(this)
-                );
+                Lampa.Api.list(object, this.build.bind(this), this.empty.bind(this));
 
                 filtersBar = buildFiltersBar(function () {
                     Lampa.Activity.replace(buildActivityObject());
@@ -552,7 +524,6 @@
     function tryAddToMenu() {
         if (!Lampa.Menu || typeof Lampa.Menu.addButton !== 'function') return false;
         if (window.__horror_menu_added__) return true;
-
         Lampa.Menu.addButton(ICON, TITLE, pushHorror);
         window.__horror_menu_added__ = true;
         return true;
@@ -560,7 +531,6 @@
 
     function initMenu() {
         if (tryAddToMenu()) return;
-
         var attempts = 0;
         var interval = setInterval(function () {
             if (tryAddToMenu() || ++attempts >= MENU_MAX_RETRIES) {
