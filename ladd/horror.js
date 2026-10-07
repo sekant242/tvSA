@@ -1,24 +1,10 @@
 (function () {
   'use strict';
 
-  /*
-  ============================================================
-  КОНСТАНТЫ
-  ============================================================
-  */
   var ICON_HORROR = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8.13 2 5 5.13 5 9v7c0 1.1.9 2 2 2h1v-3c0-.55.45-1 1-1s1 .45 1 1v3h4v-3c0-.55.45-1 1-1s1 .45 1 1v3h1c1.1 0 2-.9 2-2V9c0-3.87-3.13-7-7-7zm-4 8c-.83 0-1.5-.67-1.5-1.5S7.17 7 8 7s1.5.67 1.5 1.5S8.83 10 8 10zm8 0c-.83 0-1.5-.67-1.5-1.5S15.17 7 16 7s1.5.67 1.5 1.5S16.83 10 16 10z" fill="currentColor"/></svg>';
-  var ICON_STUDIO = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z" fill="currentColor"/></svg>';
 
-  var TMDB_API = 'https://api.themoviedb.org/3';
-  var API_KEY = '4ef0d7355d9ffb5151e987764708ce96';
-  var LANG = 'ru-RU';
   var GENRE_HORROR = 27;
 
-  /*
-  ============================================================
-  ДАННЫЕ
-  ============================================================
-  */
   var subgenres = [
     { title: 'Слэшеры', kw: '12339' },
     { title: 'Зомби', kw: '12377' },
@@ -65,457 +51,111 @@
     { id: 7295, name: 'Constantin Film' }
   ];
 
-  /*
-  ============================================================
-  СОСТОЯНИЕ
-  ============================================================
-  */
-  var scareLoading = false;
-  var studioLoading = false;
-  var studioPage = 1;
+  /* ============================================================
+     Страница «Ужасы» — список: Студии + поджанры
+     ============================================================ */
+  function openHorrorPage() {
+    var items = [{
+      title: '🎬 Студии хорроров',
+      studios: true
+    }];
 
-  /*
-  ============================================================
-  УТИЛИТЫ
-  ============================================================
-  */
-  function enabledControllerName() {
-    try {
-      var ctrl = Lampa.Controller.enabled();
-      return (ctrl && ctrl.name) ? ctrl.name : 'content';
-    } catch (e) {
-      return 'content';
-    }
-  }
-
-  function safeStopLoading() {
-    try { Lampa.Loading.stop(); } catch (e) {}
-  }
-
-  function tmdbDiscover(params, onSuccess, onError) {
-    var query = [];
-    for (var k in params) {
-      if (Object.prototype.hasOwnProperty.call(params, k)) {
-        query.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
-      }
-    }
-    var url = TMDB_API + '/discover/movie?' + query.join('&') + '&api_key=' + API_KEY + '&language=' + LANG + '&include_adult=false';
-    var network = new Lampa.Reguest();
-    network.silent(url, onSuccess, function (err) {
-      if (onError) onError(err);
-    });
-  }
-
-  function tmdbCompanyMovies(companyId, page, onSuccess, onError) {
-    var url = TMDB_API + '/discover/movie?' +
-      'with_companies=' + companyId +
-      '&with_genres=' + GENRE_HORROR +
-      '&sort_by=popularity.desc' +
-      '&page=' + page +
-      '&api_key=' + API_KEY +
-      '&language=' + LANG +
-      '&include_adult=false';
-    var network = new Lampa.Reguest();
-    network.silent(url, onSuccess, function (err) {
-      if (onError) onError(err);
-    });
-  }
-
-  function mapMovie(item) {
-    item.source = 'tmdb';
-    return item;
-  }
-
-  /*
-  ============================================================
-  КАРТОЧКА ФИЛЬМА
-  ============================================================
-  */
-  function showScareCard(movie) {
-    if (!movie) return;
-    var prev = enabledControllerName();
-    Lampa.Activity.push({
-      url: '',
-      title: movie.title || movie.name || 'Фильм',
-      component: 'movie',
-      movie: movie,
-      source: 'tmdb',
-      card: movie,
-      id: movie.id
-    });
-    // НЕ переопределяем Lampa.Controller.onBack — это глобальный обработчик.
-    // Вместо этого можно вернуть фокус через событие, но для простоты оставим как есть.
-  }
-
-  /*
-  ============================================================
-  КОМПОНЕНТ-ОБЁРТКА ДЛЯ HTML-СТРАНИЦ
-  ============================================================
-  */
-  function createHtmlComponent(componentName) {
-    Lampa.Component.add(componentName, function (object) {
-      var html = $(object.html);
-      this.create = function () {
-        this.activity.loader(false);
-        this.activity.toggle();
-      };
-      this.start = function () {
-        if (object.onStart) object.onStart(html);
-      };
-      this.render = function () {
-        return html;
-      };
-      this.destroy = function () {
-        html.remove();
-      };
-    });
-  }
-
-  // Регистрируем все три компонента
-  createHtmlComponent('scare');
-  createHtmlComponent('studio-list');
-  createHtmlComponent('studio-page');
-
-  /*
-  ============================================================
-  ГЛАВНАЯ СТРАНИЦА «УЖАСЫ»
-  ============================================================
-  */
-  function buildScareComponent() {
-    var html = '' +
-      '<div class="scare-root">' +
-        '<div class="scare-header">' +
-          '<div class="scare-title">Ужасы</div>' +
-          '<div class="scare-sub">Подборки по поджанрам</div>' +
-        '</div>' +
-        '<div class="scare-rows"></div>' +
-      '</div>';
-    return html;
-  }
-
-  function renderRow(row, movies) {
-    var $row = $('<div class="scare-row"></div>');
-    $row.append('<div class="scare-row-title">' + row.title + '</div>');
-    var $scroll = $('<div class="scare-row-scroll"></div>');
-    var $items = $('<div class="scare-row-items"></div>');
-
-    movies.forEach(function (movie) {
-      var poster = movie.poster_path
-        ? 'https://image.tmdb.org/t/p/w300' + movie.poster_path
-        : './img/img_broken.svg';
-
-      var $card = $(
-        '<div class="scare-card">' +
-          '<div class="scare-card-poster">' +
-            '<img src="' + poster + '" alt="" />' +
-          '</div>' +
-          '<div class="scare-card-title">' + (movie.title || movie.name || '') + '</div>' +
-        '</div>'
-      );
-
-      $card.on('hover:enter click', function () {
-        showScareCard(mapMovie(movie));
+    subgenres.forEach(function (sg) {
+      items.push({
+        title: sg.title,
+        kw: sg.kw
       });
-
-      $items.append($card);
     });
 
-    $scroll.append($items);
-    $row.append($scroll);
-    return $row;
-  }
-
-  function loadAllRows(container) {
-    var $rows = container.find('.scare-rows');
-    var index = 0;
-
-    function next() {
-      if (index >= subgenres.length) {
-        safeStopLoading();
-        scareLoading = false;
-        return;
-      }
-
-      var row = subgenres[index++];
-      var attempts = 0;
-
-      function tryLoad() {
-        tmdbDiscover({
-          with_genres: GENRE_HORROR,
-          with_keywords: row.kw,
-          sort_by: 'popularity.desc',
-          page: 1
-        }, function (data) {
-          if (data && data.results && data.results.length) {
-            $rows.append(renderRow(row, data.results));
-          }
-          next();
-        }, function () {
-          attempts++;
-          if (attempts < 2) {
-            setTimeout(tryLoad, 500);
-          } else {
-            next(); // пропускаем строку после 2 неудач
-          }
-        });
-      }
-
-      tryLoad();
-    }
-
-    next();
-  }
-
-  function scareMe() {
-    if (scareLoading) return;
-    scareLoading = true;
-    try { Lampa.Loading.start(); } catch (e) {}
-
-    var container = $(buildScareComponent());
-
-    Lampa.Activity.push({
-      url: '',
+    Lampa.Select.show({
       title: 'Ужасы',
-      component: 'scare',
-      html: container,
-      onStart: function () {
-        loadAllRows(container);
-      },
-      onBack: function () {
-        if (Lampa.Activity.active().component === 'scare') {
-          Lampa.Activity.backward();
-        }
-      }
-    });
-  }
-
-  /*
-  ============================================================
-  СТРАНИЦА «СТУДИИ» — СПИСОК
-  ============================================================
-  */
-  function buildStudioListHtml() {
-    return '' +
-      '<div class="studio-root">' +
-        '<div class="studio-header">' +
-          '<div class="studio-title">Студии хорроров</div>' +
-          '<div class="studio-sub">Выберите студию, чтобы увидеть её фильмографию</div>' +
-        '</div>' +
-        '<div class="studio-list"></div>' +
-      '</div>';
-  }
-
-  function renderStudioList(container) {
-    var $list = container.find('.studio-list');
-
-    studios.forEach(function (studio) {
-      var $item = $(
-        '<div class="studio-item">' +
-          '<div class="studio-item-name">' + studio.name + '</div>' +
-          '<div class="studio-item-arrow">›</div>' +
-        '</div>'
-      );
-
-      $item.on('hover:enter click', function () {
-        openStudio(studio);
-      });
-
-      $list.append($item);
-    });
-  }
-
-  function openStudioList() {
-    if (studioLoading) return;
-    studioLoading = true;
-    var container = $(buildStudioListHtml());
-
-    Lampa.Activity.push({
-      url: '',
-      title: 'Студии хорроров',
-      component: 'studio-list',
-      html: container,
-      onStart: function () {
-        renderStudioList(container);
-      },
-      onBack: function () {
-        if (Lampa.Activity.active().component === 'studio-list') {
-          Lampa.Activity.backward();
-        }
-      }
-    });
-
-    studioLoading = false;
-  }
-
-  /*
-  ============================================================
-  СТРАНИЦА СТУДИИ — ФИЛЬМОГРАФИЯ
-  ============================================================
-  */
-  function buildStudioPageHtml(studio) {
-    return '' +
-      '<div class="studio-page-root">' +
-        '<div class="studio-page-header">' +
-          '<div class="studio-page-title">' + studio.name + '</div>' +
-          '<div class="studio-page-sub">Фильмы ужасов</div>' +
-        '</div>' +
-        '<div class="studio-page-grid"></div>' +
-        '<div class="studio-load-more">Показать ещё</div>' +
-      '</div>';
-  }
-
-  function renderStudioMovies(container, movies, append) {
-    var $grid = container.find('.studio-page-grid');
-    if (!append) $grid.empty();
-
-    movies.forEach(function (movie) {
-      if (!movie || !movie.id) return;
-
-      var poster = movie.poster_path
-        ? 'https://image.tmdb.org/t/p/w300' + movie.poster_path
-        : './img/img_broken.svg';
-
-      var $card = $(
-        '<div class="scare-card">' +
-          '<div class="scare-card-poster">' +
-            '<img src="' + poster + '" alt="" />' +
-          '</div>' +
-          '<div class="scare-card-title">' + (movie.title || movie.name || '') + '</div>' +
-        '</div>'
-      );
-
-      $card.on('hover:enter click', function () {
-        showScareCard(mapMovie(movie));
-      });
-
-      $grid.append($card);
-    });
-  }
-
-  function openStudio(studio) {
-    studioPage = 1;
-    var container = $(buildStudioPageHtml(studio));
-    var loadingMore = false;
-
-    function loadPage(page, append) {
-      if (loadingMore) return;
-      loadingMore = true;
-      try { Lampa.Loading.start(); } catch (e) {}
-
-      tmdbCompanyMovies(studio.id, page, function (data) {
-        safeStopLoading();
-        loadingMore = false;
-
-        var results = (data && data.results) ? data.results : [];
-        renderStudioMovies(container, results, append);
-
-        var totalPages = (data && data.total_pages) ? data.total_pages : 1;
-        if (page < totalPages) {
-          container.find('.studio-page-more').show();
+      items: items,
+      onSelect: function (item) {
+        if (item.studios) {
+          openStudiosPage();
         } else {
-          container.find('.studio-page-more').hide();
+          Lampa.Activity.push({
+            url: 'discover/movie',
+            title: 'Ужасы: ' + item.title,
+            component: 'category_full',
+            genres: GENRE_HORROR,
+            keywords: item.kw,
+            source: 'tmdb',
+            page: 1
+          });
         }
-      }, function () {
-        safeStopLoading();
-        loadingMore = false;
-        Lampa.Noty.show('Не удалось загрузить фильмы студии');
-      });
-    }
-
-    Lampa.Activity.push({
-      url: '',
-      title: studio.name,
-      component: 'studio-page',
-      html: container,
-      onStart: function () {
-        loadPage(1, false);
-        container.find('.studio-load-more').on('hover:enter click', function () {
-          if (loadingMore) return;
-          studioPage++;
-          loadPage(studioPage, true);
-        });
       },
       onBack: function () {
-        if (Lampa.Activity.active().component === 'studio-page') {
-          Lampa.Activity.backward();
-        }
+        try { Lampa.Controller.toggle('content'); } catch (e) {}
       }
     });
   }
 
-  /*
-  ============================================================
-  РЕГИСТРАЦИЯ В МЕНЮ
-  ============================================================
-  */
+  /* ============================================================
+     Страница «Студии хорроров»
+     ============================================================ */
+  function openStudiosPage() {
+    var items = studios.map(function (s) {
+      return {
+        title: s.name,
+        studio: s
+      };
+    });
+
+    Lampa.Select.show({
+      title: 'Студии хорроров',
+      items: items,
+      onSelect: function (item) {
+        Lampa.Activity.push({
+          url: 'discover/movie',
+          title: item.studio.name,
+          component: 'category_full',
+          companies: item.studio.id,
+          genres: GENRE_HORROR,
+          sort_by: 'popularity.desc',
+          source: 'tmdb',
+          page: 1
+        });
+      },
+      onBack: openHorrorPage
+    });
+  }
+
+  /* ============================================================
+     Добавление одного пункта меню «Ужасы»
+     ============================================================ */
+  var menuAdded = false;
+
   function addMenuButton() {
-    Lampa.Menu.addButton({
-      title: 'Ужасы',
-      icon: ICON_HORROR,
-      onSelect: function () {
-        scareMe();
-      }
-    });
+    if (menuAdded) return;
+    if (!Lampa || !Lampa.Menu || typeof Lampa.Menu.addButton !== 'function') return;
 
-    Lampa.Menu.addButton({
-      title: 'Студии',
-      icon: ICON_STUDIO,
-      onSelect: function () {
-        openStudioList();
-      }
-    });
+    menuAdded = true;
+
+    var btn = Lampa.Menu.addButton(ICON_HORROR, 'Ужасы');
+    if (btn && btn.attr) btn.attr('data-action', 'horror-page');
   }
 
-  /*
-  ============================================================
-  СТИЛИ
-  ============================================================
-  */
-  function addStyles() {
-    if ($('#horror-plugin-styles').length) return;
+  /* ============================================================
+     Подписываемся на события меню:
+     - 'end'    → добавляем пункт
+     - 'action' → открываем страницу
+     ============================================================ */
+  Lampa.Listener.follow('menu', function (e) {
+    if (e.type === 'end') {
+      addMenuButton();
+    }
+    if (e.type === 'action' && e.action === 'horror-page') {
+      if (typeof e.abort === 'function') e.abort();
+      openHorrorPage();
+    }
+  });
 
-    var css = '' +
-      '.scare-root, .studio-root, .studio-page-root { padding: 20px 40px 40px 40px; }' +
-      '.scare-header, .studio-header, .studio-page-header { margin-bottom: 30px; }' +
-      '.scare-title, .studio-title, .studio-page-title { font-size: 32px; font-weight: 700; color: #fff; }' +
-      '.scare-sub, .studio-sub, .studio-page-sub { font-size: 14px; color: rgba(255,255,255,.55); margin-top: 6px; }' +
-      '.scare-row { margin-bottom: 34px; }' +
-      '.scare-row-title { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 14px; }' +
-      '.scare-row-scroll { overflow-x: auto; overflow-y: hidden; }' +
-      '.scare-row-items { display: flex; gap: 14px; }' +
-      '.scare-card { width: 150px; flex: 0 0 auto; cursor: pointer; transition: transform .2s ease; }' +
-      '.scare-card:hover, .scare-card.focus { transform: scale(1.06); }' +
-      '.scare-card-poster { width: 150px; height: 225px; border-radius: 8px; overflow: hidden; background: rgba(255,255,255,.06); }' +
-      '.scare-card-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }' +
-      '.scare-card-title { font-size: 12px; color: #eee; margin-top: 8px; line-height: 1.3; max-height: 32px; overflow: hidden; }' +
-      '.studio-list { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }' +
-      '.studio-item { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; background: rgba(255,255,255,.05); border-radius: 8px; cursor: pointer; transition: background .2s; }' +
-      '.studio-item:hover, .studio-item.focus { background: rgba(255,255,255,.12); }' +
-      '.studio-item-name { color: #fff; font-size: 16px; }' +
-      '.studio-item-arrow { color: rgba(255,255,255,.4); font-size: 22px; }' +
-      '.studio-page-grid { display: flex; flex-wrap: wrap; gap: 14px; }' +
-      '.studio-load-more { display: inline-block; padding: 12px 28px; background: rgba(255,255,255,.08); border-radius: 8px; color: #fff; cursor: pointer; }' +
-      '.studio-load-more:hover, .studio-load-more.focus { background: rgba(255,255,255,.16); }';
+  /* ============================================================
+     Резервный вариант — если плагин загрузился после init меню
+     ============================================================ */
+  setTimeout(function () {
+    try { addMenuButton(); } catch (err) {}
+  }, 3000);
 
-    $('<style id="horror-plugin-styles"></style>').text(css).appendTo('head');
-  }
-
-  /*
-  ============================================================
-  ИНИЦИАЛИЗАЦИЯ
-  ============================================================
-  */
-  function start() {
-    addStyles();
-    addMenuButton();
-  }
-
-  // Единая точка входа — избегаем двойной инициализации
-  if (window.appready) {
-    start();
-  } else {
-    Lampa.Listener.follow('app', function (e) {
-      if (e.type === 'ready') start();
-    });
-  }
 })();
