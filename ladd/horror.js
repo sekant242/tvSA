@@ -13,6 +13,8 @@
     var DEFAULT_GENRE = '27|53';
     var MENU_RETRY_INTERVAL = 500;
     var MENU_MAX_RETRIES = 40;
+    var TMDB_KEY = '4ef0d7355d9ffb5151e987764708ce96';
+    var TMDB_IMG = 'https://image.tmdb.org/t/p/';
 
     var ICON = '<svg width="26" height="28" viewBox="0 0 24 24" fill="none" ' +
         'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
@@ -70,36 +72,23 @@
         { id: 1800,   title: 'Паранойя' }
     ];
 
-    // Логотипы студий (SVG с Wikimedia Commons — стабильные прямые ссылки)
+    // Студии: логотипы грузятся из TMDB API, а не из Wikimedia.
+    // "minYear" — минимальный год выхода, чтобы отсечь старые фильмы
     var STUDIOS = [
-        { id: 3172,  title: 'Blumhouse',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Blumhouse_Productions_logo.svg/320px-Blumhouse_Productions_logo.svg.png' },
-        { id: 41077, title: 'A24',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/A24_logo.svg/320px-A24_logo.svg.png' },
-        { id: 10330, title: 'Ghost House',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Ghost_House_Pictures_logo.svg/320px-Ghost_House_Pictures_logo.svg.png' },
-        { id: 8850,  title: 'Hammer Film',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Hammer_Film_Productions_logo.svg/320px-Hammer_Film_Productions_logo.svg.png' },
-        { id: 22846, title: 'Dark Castle',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/DarkCastlelogo.svg/320px-DarkCastlelogo.svg.png' },
-        { id: 90764, title: 'Neon',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Neon_logo.svg/320px-Neon_logo.svg.png' },
-        { id: 12,    title: 'New Line Cinema',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/New_Line_Cinema.svg/320px-New_Line_Cinema.svg.png' },
-        { id: 174,   title: 'Warner Bros.',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Warner_Bros._logo_2023.svg/320px-Warner_Bros._logo_2023.svg.png' },
-        { id: 33,    title: 'Universal',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Universal_Pictures_logo.svg/320px-Universal_Pictures_logo.svg.png' },
-        { id: 4,     title: 'Paramount',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Paramount_Pictures_Corporation_logo.svg/320px-Paramount_Pictures_Corporation_logo.svg.png' },
-        { id: 25,    title: '20th Century',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/20th_Century_Studios.svg/320px-20th_Century_Studios.svg.png' },
-        { id: 10570, title: 'Orion Pictures',
-          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Orion_Pictures_logo.svg/320px-Orion_Pictures_logo.svg.png' }
+        { id: 3172,  title: 'Blumhouse',      minYear: 0 },
+        { id: 41077, title: 'A24',            minYear: 0 },
+        { id: 10330, title: 'Ghost House',    minYear: 0 },
+        { id: 8850,  title: 'Hammer Film',    minYear: 2000 },
+        { id: 22846, title: 'Dark Castle',    minYear: 0 },
+        { id: 90764, title: 'Neon',           minYear: 0 },
+        { id: 12,    title: 'New Line Cinema', minYear: 0 },
+        { id: 174,   title: 'Warner Bros.',   minYear: 0 },
+        { id: 33,    title: 'Universal',      minYear: 0 },
+        { id: 4,     title: 'Paramount',      minYear: 0 },
+        { id: 25,    title: '20th Century',   minYear: 0 },
+        { id: 10570, title: 'Orion Pictures', minYear: 0 }
     ];
 
-    // MULTI_FILTERS: только языки и поджанры — чекбоксы.
-    // Студии вынесены отдельно — одиночный выбор с логотипами.
     var MULTI_FILTERS = [
         { key: 'languages', title: 'Язык',    items: LANGUAGES, prop: 'code' },
         { key: 'subgenres', title: 'Поджанр', items: SUBGENRES, prop: 'id' }
@@ -113,9 +102,65 @@
         genre: DEFAULT_GENRE,
         languages: [],
         subgenres: [],
-        studio: null,       // одиночный выбор вместо массива
+        studio: null,
         searchQuery: ''
     };
+
+    // Кэш логотипов: { studioId: logoUrl }
+    var logoCache = {};
+
+    // ═══════════════════════════════════════════════════════════════
+    // TMDB LOGO FETCHING
+    // ═══════════════════════════════════════════════════════════════
+
+    function fetchStudioLogo(studioId, callback) {
+        if (logoCache[studioId] !== undefined) {
+            callback(logoCache[studioId]);
+            return;
+        }
+
+        var url = 'https://api.themoviedb.org/3/company/' + studioId +
+                  '/images?api_key=' + TMDB_KEY;
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.timeout = 8000;
+        xhr.responseType = 'json';
+
+        xhr.onload = function () {
+            var logo = null;
+            try {
+                var data = xhr.response;
+                if (data && data.logos && data.logos.length) {
+                    // Берём логотип с наибольшим разрешением
+                    var best = data.logos.sort(function (a, b) {
+                        return (b.width || 0) - (a.width || 0);
+                    })[0];
+                    if (best && best.file_path) {
+                        logo = TMDB_IMG + 'w300' + best.file_path;
+                    }
+                }
+            } catch (e) {}
+            logoCache[studioId] = logo;
+            callback(logo);
+        };
+
+        xhr.onerror = xhr.ontimeout = function () {
+            logoCache[studioId] = null;
+            callback(null);
+        };
+
+        xhr.send();
+    }
+
+    // Предзагрузка логотипов всех студий (фоном)
+    function preloadStudioLogos() {
+        STUDIOS.forEach(function (s) {
+            if (logoCache[s.id] === undefined) {
+                fetchStudioLogo(s.id, function () {});
+            }
+        });
+    }
 
     // ═══════════════════════════════════════════════════════════════
     // HELPERS
@@ -141,12 +186,19 @@
         var filter = {};
         if (state.languages.length) filter.with_original_language = state.languages.join('|');
         if (state.subgenres.length) filter.with_keywords = state.subgenres.join('|');
-        if (state.studio !== null)  filter.with_companies = String(state.studio);
+
+        if (state.studio !== null) {
+            filter.with_companies = String(state.studio);
+            // Для Hammer Film — только фильмы после 2000 года
+            var s = STUDIOS.find(function (x) { return x.id === state.studio; });
+            if (s && s.minYear) {
+                filter['primary_release_date.gte'] = s.minYear + '-01-01';
+            }
+        }
+
         return filter;
     }
 
-    // Полный объект активности — все поля задаются явно,
-    // чтобы при Activity.replace ничего старого не «прилипало».
     function buildActivityObject() {
         var obj = {
             component: COMPONENT,
@@ -190,11 +242,15 @@
             '.horror-filter-btn.focus{background:#fff;color:#000}',
             '.horror-filter-reset{background:rgba(220,60,60,.25);border-color:rgba(220,60,60,.4)}',
             '.horror-filter-count{opacity:.65;margin-left:.4em;font-size:.85em}',
-            '.horror-filter-logo{height:1.2em;width:auto;max-width:3.2em;object-fit:contain;',
+            '.horror-filter-logo{height:1.3em;width:auto;max-width:4em;object-fit:contain;',
             'vertical-align:middle;filter:brightness(0) invert(1)}',
             '.horror-filter-btn.focus .horror-filter-logo{filter:none}',
-            '.horror-studio-item .selectbox-item__icon img{height:1.6em;width:auto;max-width:5em;object-fit:contain}',
-            '.horror-studio-item .selectbox-item__icon{background:transparent!important}'
+            '.horror-studio-item .selectbox-item__icon{background:transparent!important;',
+            'display:flex;align-items:center;justify-content:center;min-width:2.5em}',
+            '.horror-studio-item .selectbox-item__icon img{height:1.8em;width:auto;max-width:6em;',
+            'object-fit:contain;filter:brightness(0) invert(1)}',
+            '.horror-studio-item .selectbox-item__icon .horror-logo-fallback{',
+            'font-size:.75em;opacity:.5;text-transform:uppercase;letter-spacing:.05em}'
         ].join('');
         document.head.appendChild(style);
     }
@@ -222,7 +278,6 @@
         });
     }
 
-    // Универсальный чекбокс-фильтр (языки / поджанры)
     function openMultiFilter(def, onChange) {
         var selected = state[def.key];
         var changed = false;
@@ -253,21 +308,26 @@
         });
     }
 
-    // Одиночный выбор студии с логотипами
+    // Одиночный выбор студии с логотипами из TMDB API
     function openStudioFilter(onChange) {
         var items = STUDIOS.map(function (s) {
+            var logo = logoCache[s.id];
+            var icon;
+            if (logo) {
+                icon = '<img src="' + logo + '" onerror="this.style.display=\'none\'">';
+            } else {
+                icon = '<span class="horror-logo-fallback">' + s.title.slice(0, 3) + '</span>';
+            }
             return {
                 title: s.title,
                 id: s.id,
                 selected: state.studio === s.id,
                 template: 'selectbox_icon',
-                icon: '<img src="' + s.logo + '" onerror="this.style.display=\'none\'">',
-                // Добавляем класс для стилизации через onDraw
+                icon: icon,
                 _studio: true
             };
         });
 
-        // «Любая студия» — сброс
         items.unshift({
             title: 'Любая',
             id: null,
@@ -328,7 +388,7 @@
         genreBtn.addEventListener('click', function () { openGenreFilter(onChange); });
         bar.appendChild(genreBtn);
 
-        // Язык / Поджанр (чекбоксы)
+        // Язык / Поджанр
         MULTI_FILTERS.forEach(function (def) {
             var count = state[def.key].length;
             var btn = document.createElement('div');
@@ -346,22 +406,23 @@
             bar.appendChild(btn);
         });
 
-        // Студия (одиночный выбор с логотипом)
+        // Студия с логотипом из кэша
         var studioBtn = document.createElement('div');
         studioBtn.className = 'horror-filter-btn selector';
         if (state.studio !== null) {
             var s = STUDIOS.find(function (x) { return x.id === state.studio; });
             if (s) {
-                var img = document.createElement('img');
-                img.className = 'horror-filter-logo';
-                img.src = s.logo;
-                img.onerror = function () { this.style.display = 'none'; };
-                studioBtn.appendChild(img);
+                var logo = logoCache[s.id];
+                if (logo) {
+                    var img = document.createElement('img');
+                    img.className = 'horror-filter-logo';
+                    img.src = logo;
+                    img.onerror = function () { this.style.display = 'none'; };
+                    studioBtn.appendChild(img);
+                }
                 var txt = document.createElement('span');
                 txt.textContent = s.title;
                 studioBtn.appendChild(txt);
-            } else {
-                studioBtn.textContent = 'Студия';
             }
         } else {
             studioBtn.textContent = 'Студия';
@@ -400,14 +461,13 @@
 
     function HorrorComponent(object) {
         injectStyles();
+        preloadStudioLogos();
 
-        // Сливаем актуальные фильтры в объект активности
         var activityObj = buildActivityObject();
         Object.keys(activityObj).forEach(function (k) {
             if (k !== 'component') object[k] = activityObj[k];
         });
 
-        // Класс Category — грид карточек, использует Lampa.Api.list
         var comp = Lampa.Maker.make('Category', object);
         var filtersBar = null;
 
@@ -415,20 +475,17 @@
             onCreate: function () {
                 var _this = this;
 
-                // 1) Грузим данные. onEmpty сработает при пустом ответе TMDB
                 Lampa.Api.list(
                     object,
                     this.build.bind(this),
                     this.empty.bind(this)
                 );
 
-                // 2) Вставляем фильтр-бар над скроллом
                 filtersBar = buildFiltersBar(function () {
                     Lampa.Activity.replace(buildActivityObject());
                 });
                 this.html.insertBefore(filtersBar, this.html.firstChild);
 
-                // 3) Скорректировать высоту скролла с учётом фильтр-бара
                 requestAnimationFrame(function () {
                     if (_this.scroll && filtersBar && filtersBar.parentNode) {
                         _this.scroll.minus(filtersBar);
@@ -437,12 +494,10 @@
                 });
             },
 
-            // Подгрузка следующей страницы (бесконечный скролл)
             onNext: function (resolve, reject) {
                 Lampa.Api.list(object, resolve.bind(this), reject.bind(this));
             },
 
-            // Клик по карточке -> полная карточка фильма
             onInstance: function (item, data) {
                 item.use({
                     onEnter: Lampa.Router.call.bind(Lampa.Router, 'full', data),
@@ -452,9 +507,7 @@
                 });
             },
 
-            // Пустой результат — показываем заглушку вместо вечного лоадера
             onEmpty: function () {
-                var _this2 = this;
                 var empty = new Lampa.Empty({
                     title: 'Ничего не найдено',
                     descr: 'По выбранным фильтрам нет фильмов. Попробуйте изменить условия или сбросить фильтры.'
@@ -463,7 +516,6 @@
                 this.scroll.append(empty.render(true));
                 this.start = empty.start.bind(empty);
 
-                // Кнопка сброса фильтров на пустом экране
                 var resetBtn = document.createElement('div');
                 resetBtn.className = 'simple-button selector';
                 resetBtn.style.margin = '1em auto';
