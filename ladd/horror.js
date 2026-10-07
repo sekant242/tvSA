@@ -1,843 +1,738 @@
-/**
- * Плагин «Ужасы» для Lampa
- * Расширенная категория фильмов ужасов и триллеров с фильтрацией по TMDB.
- *
- * Возможности:
- *  - Жанры (Ужасы / Триллер / оба)
- *  - Языки оригинала (16 языков)
- *  - Поджанры (ключевые слова TMDB)
- *  - Киностудии
- *  - Текстовый поиск
- *  - Сохранение состояния фильтров между сессиями
- *  - Пагинация с защитой от перегрузки
- */
 (function () {
     'use strict';
 
     /* ============================================================
-     * КОНСТАНТЫ
+     *  TVSA HORROR PLUGIN v2.0
+     *  Улучшенная версия: без сериалов, только фильмы жанров
+     *  Horror (27) и Thriller (53) с расширенной фильтрацией.
      * ============================================================ */
 
-    const PLUGIN_NAME = 'Ужасы';
-    const COMPONENT_NAME = 'horror';
-    const STYLE_ID = 'horror-plugin-styles';
-    const STORAGE_KEY = 'horror_plugin_filters';
-    const MENU_ACTION = 'horror';
-
-    const SEARCH_DEBOUNCE_MS = 600;
-    const MAX_PAGES = 20;
-    const LOAD_NEXT_THRESHOLD = 1.5;
-
-    const GENRES = {
-        HORROR: 27,
-        THRILLER: 53
+    // ---------- Константы ----------
+    var CONFIG = {
+        // TMDB genre IDs: 27 = Horror, 53 = Thriller
+        baseGenres: '27,53',
+        defaultGenres: [27, 53],
+        itemsView: 6,
+        searchDebounce: 600,
+        menuRetryDelay: 500,
+        menuMaxRetries: 60,
+        storageKey: 'tvsa_horror_filters'
     };
 
-    const GENRES_QUERY = `${GENRES.HORROR}|${GENRES.THRILLER}`;
-
-    const LANGUAGES = [
-        ['en', 'Английский'],
-        ['ru', 'Русский'],
-        ['es', 'Испанский'],
-        ['fr', 'Французский'],
-        ['de', 'Немецкий'],
-        ['it', 'Итальянский'],
-        ['ja', 'Японский'],
-        ['ko', 'Корейский'],
-        ['zh', 'Китайский'],
-        ['pt', 'Португальский'],
-        ['sv', 'Шведский'],
-        ['da', 'Датский'],
-        ['no', 'Норвежский'],
-        ['fi', 'Финский'],
-        ['nl', 'Нидерландский'],
-        ['pl', 'Польский']
-    ];
-
-    const KEYWORDS = [
-        [12377, 'Зомби'],
-        [3133, 'Вампиры'],
-        [9951, 'Пришельцы'],
-        [10714, 'Серийный убийца'],
-        [154243, 'Психопаты'],
-        [288403, 'Проклятие'],
-        [2343, 'Паранормальное'],
-        [3222, 'Маньяк'],
-        [11322, 'Каннибализм'],
-        [187056, 'Одержимость'],
-        [10617, 'Катастрофа'],
-        [9748, 'Месть']
-    ];
-
-    const COMPANIES = [
-        [10908, 'Blumhouse'],
-        [41077, 'A24'],
-        [3172, 'Blumhouse Productions'],
-        [12654, 'Ghost House'],
-        [831, 'Vertigo Entertainment'],
-        [4, 'Paramount'],
-        [33, 'Universal'],
-        [174, 'Warner Bros.'],
-        [34, 'Sony'],
-        [5215, 'Northern Lights'],
-        [435, 'Twisted Pictures'],
-        [1632, 'Lionsgate'],
-        [5855, 'Atomic Monster'],
-        [10039, 'Dark Castle'],
-        [11218, 'New Line']
-    ];
-
-    /* ============================================================
-     * УТИЛИТЫ
-     * ============================================================ */
-
-    const Logger = {
-        log: function () {
-            const args = Array.prototype.slice.call(arguments);
-            args.unshift('[' + PLUGIN_NAME + ']');
-            console.log.apply(console, args);
-        },
-        warn: function () {
-            const args = Array.prototype.slice.call(arguments);
-            args.unshift('[' + PLUGIN_NAME + ']');
-            console.warn.apply(console, args);
-        },
-        error: function () {
-            const args = Array.prototype.slice.call(arguments);
-            args.unshift('[' + PLUGIN_NAME + ']');
-            console.error.apply(console, args);
-        }
+    // ---------- Данные фильтров ----------
+    var FILTERS = {
+        genres: [
+            { id: 27, title: 'Ужасы' },
+            { id: 53, title: 'Триллер' },
+            { id: 9648, title: 'Детектив' },
+            { id: 10749, title: 'Мистика (мелодрама)' }
+        ],
+        languages: [
+            { id: 'ru', title: 'Русский' },
+            { id: 'en', title: 'Английский' },
+            { id: 'es', title: 'Испанский' },
+            { id: 'fr', title: 'Французский' },
+            { id: 'de', title: 'Немецкий' },
+            { id: 'it', title: 'Итальянский' },
+            { id: 'ja', title: 'Японский' },
+            { id: 'ko', title: 'Корейский' },
+            { id: 'zh', title: 'Китайский' },
+            { id: 'pt', title: 'Португальский' },
+            { id: 'sv', title: 'Шведский' },
+            { id: 'no', title: 'Норвежский' },
+            { id: 'da', title: 'Датский' },
+            { id: 'pl', title: 'Польский' },
+            { id: 'tr', title: 'Турецкий' },
+            { id: 'hi', title: 'Хинди' }
+        ],
+        keywords: [
+            { id: 12377, title: 'Зомби' },
+            { id: 3133, title: 'Вампиры' },
+            { id: 9715, title: 'Призраки' },
+            { id: 10617, title: 'Катастрофа' },
+            { id: 10349, title: 'Выживание' },
+            { id: 9951, title: 'Инопланетяне' },
+            { id: 14544, title: 'Роботы' },
+            { id: 10541, title: 'Кукла / манекен' },
+            { id: 10714, title: 'Сериал-убийца' },
+            { id: 10718, title: 'Погоня' },
+            { id: 9826, title: 'Убийца' },
+            { id: 9748, title: 'Месть' },
+            { id: 10719, title: 'Проклятие' },
+            { id: 2343, title: 'Паранойя' },
+            { id: 4565, title: 'Антиутопия' },
+            { id: 15001, title: 'Демоны' }
+        ],
+        companies: [
+            { id: 3172, title: 'Blumhouse' },
+            { id: 41077, title: 'A24' },
+            { id: 33, title: 'Universal Pictures' },
+            { id: 174, title: 'Warner Bros.' },
+            { id: 4, title: 'Paramount' },
+            { id: 5, title: 'Columbia' },
+            { id: 25, title: '20th Century Fox' },
+            { id: 88, title: 'Sony Pictures' },
+            { id: 7505, title: 'Lionsgate' },
+            { id: 9073, title: 'Atomic Monster' },
+            { id: 10349, title: 'Ghost House' },
+            { id: 120494, title: 'Vertigo Entertainment' }
+        ]
     };
+
+    // ---------- Утилиты ----------
 
     /**
-     * Debounce — откладывает вызов fn до тех пор, пока не пройдёт wait мс без вызовов.
+     * Debounce — откладывает вызов до истечения wait мс с последнего вызова.
      */
     function debounce(fn, wait) {
-        let timer = null;
+        var timer = null;
         return function () {
-            const context = this;
-            const args = arguments;
-            clearTimeout(timer);
+            var ctx = this;
+            var args = arguments;
+            if (timer) clearTimeout(timer);
             timer = setTimeout(function () {
-                fn.apply(context, args);
+                timer = null;
+                fn.apply(ctx, args);
             }, wait);
         };
     }
 
     /**
-     * Экранирование HTML-спецсимволов.
+     * Безопасный доступ к Lampa.
      */
-    function escapeHtml(value) {
-        return String(value == null ? '' : value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
+    function L() {
+        return window.Lampa || {};
     }
 
-    function isNonEmptyArray(value) {
-        return Array.isArray(value) && value.length > 0;
+    /**
+     * Найти элемент массива по ключу.
+     */
+    function findBy(arr, key, value) {
+        for (var i = 0; i < arr.length; i++) {
+            if (arr[i][key] === value) return arr[i];
+        }
+        return null;
     }
 
-    function cloneArray(value) {
-        return Array.isArray(value) ? value.slice() : [];
+    /**
+     * Переключить значение в массиве (immutable-free, in place).
+     */
+    function toggleValue(arr, value, checked) {
+        var idx = arr.indexOf(value);
+        if (checked === undefined) {
+            if (idx === -1) arr.push(value);
+            else arr.splice(idx, 1);
+            return arr;
+        }
+        if (checked && idx === -1) arr.push(value);
+        else if (!checked && idx !== -1) arr.splice(idx, 1);
+        return arr;
     }
 
     /* ============================================================
-     * СОСТОЯНИЕ ФИЛЬТРОВ
+     *  СОСТОЯНИЕ ФИЛЬТРОВ
      * ============================================================ */
 
-    const filterState = {
-        genres: GENRES_QUERY,
+    var filterState = {
+        genres: CONFIG.defaultGenres.slice(),
         languages: [],
         keywords: [],
         companies: [],
-        search: ''
+        query: '',
+        mode: 'browse'
     };
 
-    function saveFilterState() {
-        try {
-            Lampa.Storage.set(STORAGE_KEY, {
-                genres: filterState.genres,
-                languages: filterState.languages,
-                keywords: filterState.keywords,
-                companies: filterState.companies,
-                search: filterState.search
-            });
-        } catch (e) {
-            Logger.warn('Не удалось сохранить фильтры:', e.message);
-        }
-    }
-
+    /**
+     * Загрузка сохранённого состояния из localStorage.
+     */
     function loadFilterState() {
         try {
-            const saved = Lampa.Storage.get(STORAGE_KEY, null);
-            if (!saved || typeof saved !== 'object') return;
-
-            if (typeof saved.genres === 'string' && saved.genres) {
-                filterState.genres = saved.genres;
-            }
-            if (isNonEmptyArray(saved.languages)) {
-                filterState.languages = cloneArray(saved.languages);
-            }
-            if (isNonEmptyArray(saved.keywords)) {
-                filterState.keywords = cloneArray(saved.keywords);
-            }
-            if (isNonEmptyArray(saved.companies)) {
-                filterState.companies = cloneArray(saved.companies);
-            }
-            if (typeof saved.search === 'string') {
-                filterState.search = saved.search;
+            var raw = window.localStorage.getItem(CONFIG.storageKey);
+            if (!raw) return;
+            var saved = JSON.parse(raw);
+            if (saved && typeof saved === 'object') {
+                if (Array.isArray(saved.genres) && saved.genres.length) filterState.genres = saved.genres;
+                if (Array.isArray(saved.languages)) filterState.languages = saved.languages;
+                if (Array.isArray(saved.keywords)) filterState.keywords = saved.keywords;
+                if (Array.isArray(saved.companies)) filterState.companies = saved.companies;
+                if (typeof saved.query === 'string') filterState.query = saved.query;
+                if (saved.mode === 'search' || saved.mode === 'browse') filterState.mode = saved.mode;
             }
         } catch (e) {
-            Logger.warn('Не удалось загрузить фильтры:', e.message);
+            console.warn('[Horror] loadFilterState error:', e.message);
         }
     }
 
+    /**
+     * Сохранение состояния фильтров.
+     */
+    var saveFilterState = debounce(function () {
+        try {
+            window.localStorage.setItem(CONFIG.storageKey, JSON.stringify(filterState));
+        } catch (e) {
+            console.warn('[Horror] saveFilterState error:', e.message);
+        }
+    }, 300);
+
+    /**
+     * Сброс фильтров к значениям по умолчанию.
+     */
     function resetFilterState() {
-        filterState.genres = GENRES_QUERY;
+        filterState.genres = CONFIG.defaultGenres.slice();
         filterState.languages = [];
         filterState.keywords = [];
         filterState.companies = [];
-        filterState.search = '';
+        filterState.query = '';
+        filterState.mode = 'browse';
         saveFilterState();
     }
 
-    function hasActiveFilters() {
-        return isNonEmptyArray(filterState.languages)
-            || isNonEmptyArray(filterState.keywords)
-            || isNonEmptyArray(filterState.companies)
-            || !!filterState.search
-            || filterState.genres !== GENRES_QUERY;
+    /* ============================================================
+     *  ПОСТРОЕНИЕ URL ДЛЯ TMDB
+     * ============================================================ */
+
+    /**
+     * Собирает URL discover/movie с учётом активных фильтров.
+     */
+    function buildDiscoverUrl(page) {
+        var parts = [];
+
+        // Жанры: всегда объединяем через | (OR)
+        if (filterState.genres.length) {
+            parts.push('with_genres=' + filterState.genres.join('|'));
+        }
+
+        // Языки: OR внутри языков
+        if (filterState.languages.length) {
+            parts.push('with_original_language=' + filterState.languages.join('|'));
+        }
+
+        // Ключевые слова: OR (чтобы находить фильмы с любым из тегов)
+        if (filterState.keywords.length) {
+            parts.push('with_keywords=' + filterState.keywords.join('|'));
+        }
+
+        // Компании: OR
+        if (filterState.companies.length) {
+            parts.push('with_companies=' + filterState.companies.join('|'));
+        }
+
+        // Сортировка: по популярности
+        parts.push('sort_by=popularity.desc');
+        // Исключаем adult-контент
+        parts.push('include_adult=false');
+
+        if (page && page > 1) parts.push('page=' + page);
+
+        return 'discover/movie?' + parts.join('&');
     }
 
-    function activeFilterCount() {
-        let count = 0;
-        if (isNonEmptyArray(filterState.languages)) count++;
-        if (isNonEmptyArray(filterState.keywords)) count++;
-        if (isNonEmptyArray(filterState.companies)) count++;
-        if (filterState.search) count++;
-        if (filterState.genres !== GENRES_QUERY) count++;
-        return count;
+    /**
+     * URL для текстового поиска.
+     */
+    function buildSearchUrl(page) {
+        var q = encodeURIComponent(filterState.query.trim());
+        var parts = ['query=' + q];
+        if (page && page > 1) parts.push('page=' + page);
+        return 'search/movie?' + parts.join('&');
     }
 
     /* ============================================================
-     * СТИЛИ
+     *  КОМПОНЕНТ
      * ============================================================ */
 
-    function injectStyles() {
-        if (document.getElementById(STYLE_ID)) return;
+    var active = {};
 
-        const style = document.createElement('style');
-        style.id = STYLE_ID;
-        style.textContent = [
-            '.horror-filters {',
-            '  display: flex; flex-wrap: wrap; gap: 0.6em;',
-            '  padding: 0.8em 1.2em;',
-            '  background: rgba(255, 255, 255, 0.04);',
-            '  border-bottom: 1px solid rgba(255, 255, 255, 0.08);',
-            '}',
-            '.horror-filters__btn {',
-            '  display: inline-flex; align-items: center; gap: 0.4em;',
-            '  padding: 0.5em 1em; border-radius: 2em;',
-            '  background: rgba(255, 255, 255, 0.08); color: #fff;',
-            '  font-size: 0.95em; cursor: pointer; user-select: none;',
-            '  transition: background 0.15s ease, transform 0.15s ease;',
-            '  white-space: nowrap;',
-            '}',
-            '.horror-filters__btn:hover,',
-            '.horror-filters__btn.focus {',
-            '  background: rgba(255, 255, 255, 0.18);',
-            '  transform: translateY(-1px);',
-            '}',
-            '.horror-filters__btn--active {',
-            '  background: #e02129; color: #fff;',
-            '}',
-            '.horror-filters__btn--active:hover,',
-            '.horror-filters__btn--active.focus {',
-            '  background: #ff2c35;',
-            '}',
-            '.horror-filters__badge {',
-            '  display: inline-block; min-width: 1.4em; padding: 0 0.35em;',
-            '  border-radius: 0.7em; background: rgba(0, 0, 0, 0.35);',
-            '  font-size: 0.8em; text-align: center; line-height: 1.4em;',
-            '}',
-            '.horror-filters__clear {',
-            '  margin-left: auto; color: #ff8a8a;',
-            '}',
-            '@media (max-width: 480px) {',
-            '  .horror-filters { padding: 0.6em; gap: 0.4em; }',
-            '  .horror-filters__btn { padding: 0.4em 0.8em; font-size: 0.85em; }',
-            '}'
-        ].join('\n');
-        document.head.appendChild(style);
+    function HorrorComponent(object) {
+        var self = this;
+        var network = new L().Network ? new L().Network() : null;
+
+        /**
+         * Определяет URL в зависимости от режима.
+         */
+        function getUrl(page) {
+            if (filterState.mode === 'search' && filterState.query.trim()) {
+                return buildSearchUrl(page);
+            }
+            return buildDiscoverUrl(page);
+        }
+
+        /**
+         * Создаёт объект категории с фильтр-баром.
+         */
+        this.create = function () {
+            var url = getUrl(object.page || 1);
+
+            var categoryObject = {
+                url: url,
+                title: object.title || 'Ужасы',
+                source: 'tmdb',
+                page: object.page || 1,
+                params: {
+                    module: L().Maker
+                        ? L().Maker.module('Category').except('Pagination', 'Explorer')
+                        : undefined
+                },
+                onMore: function (params) {
+                    // Показать ещё — не нужно, у нас бесконечная лента
+                }
+            };
+
+            var category = L().Maker.make('Category', categoryObject);
+
+            // Перехватываем onCreate, чтобы добавить фильтр-бар в начало скролла
+            var originalCreate = category.onCreate || function () {};
+            category.use({
+                onCreate: function () {
+                    var scroll = this.scroll;
+                    var body = this.body;
+
+                    // Контейнер для фильтров
+                    var bar = buildFiltersBar(function onChange() {
+                        saveFilterState();
+                        // Перезагружаем категорию
+                        if (active.activity) {
+                            active.activity.refresh();
+                        }
+                    });
+
+                    scroll.append(bar);
+
+                    // Восстанавливаем фильтры, если есть сохранённый query
+                    if (filterState.mode === 'search' && filterState.query) {
+                        var input = bar.querySelector('.horror-search-input');
+                        if (input) input.value = filterState.query;
+                    }
+                }
+            });
+
+            active.category = category;
+            return category;
+        };
+
+        this.render = function () {
+            return active.category ? active.category.render() : document.createElement('div');
+        };
+
+        this.destroy = function () {
+            if (network) network.clear();
+            if (active.category) {
+                active.category.destroy();
+                active.category = null;
+            }
+        };
     }
 
     /* ============================================================
-     * ПАНЕЛЬ ФИЛЬТРОВ
+     *  ФИЛЬТР-БАР
      * ============================================================ */
 
-    function buildFiltersBar() {
-        const bar = document.createElement('div');
+    /**
+     * Строит DOM-элемент фильтр-бара.
+     */
+    function buildFiltersBar(onChange) {
+        var bar = document.createElement('div');
         bar.className = 'horror-filters';
 
-        const buttons = [
-            { key: 'genres', title: 'Жанры', count: filterState.genres !== GENRES_QUERY ? 1 : 0 },
-            { key: 'languages', title: 'Языки', count: filterState.languages.length },
-            { key: 'keywords', title: 'Поджанры', count: filterState.keywords.length },
-            { key: 'companies', title: 'Студии', count: filterState.companies.length },
-            { key: 'search', title: 'Поиск', count: filterState.search ? 1 : 0 }
+        // Кнопки фильтров
+        var buttons = [
+            { key: 'genres', title: 'Жанры', items: FILTERS.genres, multiple: true },
+            { key: 'languages', title: 'Языки', items: FILTERS.languages, multiple: true },
+            { key: 'keywords', title: 'Теги', items: FILTERS.keywords, multiple: true },
+            { key: 'companies', title: 'Студии', items: FILTERS.companies, multiple: true }
         ];
 
-        buttons.forEach(function (item) {
-            const btn = document.createElement('div');
+        buttons.forEach(function (cfg) {
+            var btn = document.createElement('div');
             btn.className = 'horror-filters__btn selector';
-            btn.dataset.filter = item.key;
+            btn.dataset.filterKey = cfg.key;
 
-            let html = escapeHtml(item.title);
-            if (item.count > 0) {
-                html += ' <span class="horror-filters__badge">' + item.count + '</span>';
-                btn.classList.add('horror-filters__btn--active');
-            }
-            btn.innerHTML = html;
+            var label = document.createElement('span');
+            label.className = 'horror-filters__label';
+            label.textContent = cfg.title;
 
-            const handler = function () {
-                openFilterSelect(item.key);
-            };
-            btn.addEventListener('hover:enter', handler);
-            btn.addEventListener('click', handler);
+            var count = document.createElement('span');
+            count.className = 'horror-filters__count';
 
+            btn.appendChild(label);
+            btn.appendChild(count);
+
+            btn.addEventListener('hover:enter', function () {
+                openFilterSelect(cfg, function () {
+                    updateButtonCount(btn, cfg);
+                    onChange();
+                });
+            });
+
+            updateButtonCount(btn, cfg);
             bar.appendChild(btn);
         });
 
-        if (hasActiveFilters()) {
-            const clear = document.createElement('div');
-            clear.className = 'horror-filters__btn horror-filters__clear selector';
-            clear.textContent = 'Сбросить';
-            const clearHandler = function () {
-                resetFilterState();
-                refreshActivity();
-            };
-            clear.addEventListener('hover:enter', clearHandler);
-            clear.addEventListener('click', clearHandler);
-            bar.appendChild(clear);
-        }
+        // Поле поиска
+        var searchWrap = document.createElement('div');
+        searchWrap.className = 'horror-filters__search';
+
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'horror-search-input selector';
+        input.placeholder = 'Поиск по названию...';
+        input.value = filterState.query || '';
+
+        var applySearch = debounce(function () {
+            var value = input.value.trim();
+            filterState.query = value;
+            filterState.mode = value ? 'search' : 'browse';
+            saveFilterState();
+            onChange();
+        }, CONFIG.searchDebounce);
+
+        input.addEventListener('input', applySearch);
+        input.addEventListener('change', applySearch);
+
+        var searchBtn = document.createElement('div');
+        searchBtn.className = 'horror-filters__search-btn selector';
+        searchBtn.textContent = 'Найти';
+        searchBtn.addEventListener('hover:enter', function () {
+            var value = input.value.trim();
+            filterState.query = value;
+            filterState.mode = value ? 'search' : 'browse';
+            saveFilterState();
+            onChange();
+        });
+
+        searchWrap.appendChild(input);
+        searchWrap.appendChild(searchBtn);
+
+        // Кнопка сброса
+        var resetBtn = document.createElement('div');
+        resetBtn.className = 'horror-filters__reset selector';
+        resetBtn.textContent = 'Сбросить';
+        resetBtn.addEventListener('hover:enter', function () {
+            resetFilterState();
+            input.value = '';
+            bar.querySelectorAll('.horror-filters__btn').forEach(function (b) {
+                var key = b.dataset.filterKey;
+                var cfg = findBy(buttons, 'key', key);
+                updateButtonCount(b, cfg);
+            });
+            onChange();
+        });
+
+        searchWrap.appendChild(resetBtn);
+        bar.appendChild(searchWrap);
 
         return bar;
     }
 
-    /* ============================================================
-     * ОТКРЫТИЕ ФИЛЬТРА
-     * ============================================================ */
-
-    function toggleArrayValue(array, value, checked) {
-        const index = array.indexOf(value);
-        if (checked && index === -1) {
-            array.push(value);
-        } else if (!checked && index !== -1) {
-            array.splice(index, 1);
+    /**
+     * Обновляет счётчик на кнопке.
+     */
+    function updateButtonCount(btn, cfg) {
+        var count = btn.querySelector('.horror-filters__count');
+        var values = filterState[cfg.key] || [];
+        if (values.length) {
+            count.textContent = values.length;
+            count.style.display = 'inline-flex';
+        } else {
+            count.textContent = '';
+            count.style.display = 'none';
         }
     }
 
-    function applyAndRefresh() {
-        saveFilterState();
-        refreshActivity();
-    }
+    /**
+     * Открывает Select с чекбоксами для выбранного фильтра.
+     */
+    function openFilterSelect(cfg, onApply) {
+        var selected = filterState[cfg.key] || [];
 
-    function openGenresSelect() {
-        const items = [
-            { title: 'Ужасы и триллеры', value: GENRES_QUERY, selected: filterState.genres === GENRES_QUERY },
-            { title: 'Только ужасы', value: String(GENRES.HORROR), selected: filterState.genres === String(GENRES.HORROR) },
-            { title: 'Только триллеры', value: String(GENRES.THRILLER), selected: filterState.genres === String(GENRES.THRILLER) }
-        ];
-
-        Lampa.Select.show({
-            title: 'Жанры',
-            items: items,
-            onSelect: function (item) {
-                filterState.genres = item.value;
-                applyAndRefresh();
-            },
-            onBack: function () {
-                Lampa.Controller.toggle('content');
-            }
-        });
-    }
-
-    function openMultiSelect(title, source, target, transformItem) {
-        const items = source.map(function (entry) {
-            return transformItem(entry, target);
+        var items = cfg.items.map(function (item) {
+            return {
+                title: item.title,
+                id: item.id,
+                checkbox: true,
+                checked: selected.indexOf(item.id) !== -1
+            };
         });
 
-        Lampa.Select.show({
-            title: title,
+        // Дополнительно — кнопка "Сбросить этот фильтр"
+        items.push({
+            title: 'Очистить',
+            separator: true
+        });
+        items.push({
+            title: 'Сбросить выбор',
+            reset: true
+        });
+
+        L().Select.show({
+            title: cfg.title,
             items: items,
             onCheck: function (item) {
-                const value = item.value;
-                const checked = !!item.checked;
-                toggleArrayValue(target, value, checked);
-                applyAndRefresh();
+                if (item.reset) return;
+                toggleValue(filterState[cfg.key], item.id, item.checked);
+                saveFilterState();
             },
-            onBack: function () {
-                Lampa.Controller.toggle('content');
-            }
-        });
-    }
-
-    function openFilterSelect(key) {
-        switch (key) {
-            case 'genres':
-                openGenresSelect();
-                break;
-
-            case 'languages':
-                openMultiSelect(
-                    'Языки',
-                    LANGUAGES,
-                    filterState.languages,
-                    function (entry, target) {
-                        return {
-                            title: entry[1],
-                            value: entry[0],
-                            checked: target.indexOf(entry[0]) !== -1
-                        };
-                    }
-                );
-                break;
-
-            case 'keywords':
-                openMultiSelect(
-                    'Поджанры',
-                    KEYWORDS,
-                    filterState.keywords,
-                    function (entry, target) {
-                        return {
-                            title: entry[1],
-                            value: entry[0],
-                            checked: target.indexOf(entry[0]) !== -1
-                        };
-                    }
-                );
-                break;
-
-            case 'companies':
-                openMultiSelect(
-                    'Студии',
-                    COMPANIES,
-                    filterState.companies,
-                    function (entry, target) {
-                        return {
-                            title: entry[1],
-                            value: entry[0],
-                            checked: target.indexOf(entry[0]) !== -1
-                        };
-                    }
-                );
-                break;
-
-            case 'search':
-                openSearchInput();
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    function openSearchInput() {
-        Lampa.Input.edit({
-            title: 'Поиск',
-            value: filterState.search,
-            free: true,
-            nosave: true,
-            nomic: true
-        }, function (value) {
-            filterState.search = String(value || '').trim();
-            applyAndRefresh();
-        });
-    }
-
-    /* ============================================================
-     * ПЕРЕЗАПУСК АКТИВНОСТИ
-     * ============================================================ */
-
-    function refreshActivity() {
-        try {
-            const active = Lampa.Activity.active();
-            if (!active || active.component !== COMPONENT_NAME) {
-                return;
-            }
-
-            const activity = active.activity;
-            if (activity && typeof activity.refresh === 'function') {
-                activity.refresh();
-            }
-        } catch (e) {
-            Logger.warn('Не удалось перезапустить активность:', e.message);
-        }
-    }
-
-    /* ============================================================
-     * ЗАПРОСЫ К TMDB
-     * ============================================================ */
-
-    function buildQuery(page) {
-        const query = [];
-        query.push('with_genres=' + filterState.genres);
-        query.push('page=' + (page || 1));
-
-        if (isNonEmptyArray(filterState.languages)) {
-            query.push('with_original_language=' + filterState.languages.join('|'));
-        }
-        if (isNonEmptyArray(filterState.keywords)) {
-            query.push('with_keywords=' + filterState.keywords.join('|'));
-        }
-        if (isNonEmptyArray(filterState.companies)) {
-            query.push('with_companies=' + filterState.companies.join('|'));
-        }
-
-        return 'discover/movie?' + query.join('&');
-    }
-
-    function buildSearchQuery(page) {
-        return 'search/movie?query=' + encodeURIComponent(filterState.search)
-            + '&page=' + (page || 1);
-    }
-
-    function buildApiObject(page) {
-        const isSearch = !!filterState.search;
-        return {
-            url: isSearch ? buildSearchQuery(page) : buildQuery(page),
-            title: PLUGIN_NAME,
-            component: COMPONENT_NAME,
-            source: 'tmdb',
-            page: page || 1,
-            card_type: true
-        };
-    }
-
-    /* ============================================================
-     * КОМПОНЕНТ
-     * ============================================================ */
-
-    function createHorrorComponent(object) {
-        const scroll = new Lampa.Scroll({
-            mask: true,
-            over: true,
-            step: 300,
-            end_ratio: 2
-        });
-
-        const html = document.createElement('div');
-        const body = document.createElement('div');
-
-        let items = [];
-        let active = 0;
-        let last = null;
-        let totalPages = 1;
-        let loading = false;
-        let destroyed = false;
-        let emptyInstance = null;
-
-        body.className = 'category-full';
-
-        function isEnd() {
-            try {
-                return scroll.isEnd(LOAD_NEXT_THRESHOLD);
-            } catch (e) {
-                return false;
-            }
-        }
-
-        function onScroll() {
-            Lampa.Layer.visible(scroll.render(true));
-            if (isEnd()) {
-                loadNext();
-            }
-        }
-
-        function loadNext() {
-            if (loading || destroyed) return;
-            if (object.page >= Math.min(totalPages, MAX_PAGES)) return;
-
-            loading = true;
-            const nextPage = object.page + 1;
-
-            Lampa.Api.list(buildApiObject(nextPage), function (data) {
-                if (destroyed) return;
-                loading = false;
-                object.page = nextPage;
-                if (data && data.total_pages) {
-                    totalPages = data.total_pages;
-                }
-                append(data, true);
-            }, function () {
-                loading = false;
-            });
-        }
-
-        function append(data, appendToScroll) {
-            if (!data || !isNonEmptyArray(data.results)) return;
-            if (data.total_pages) totalPages = data.total_pages;
-
-            const fragment = document.createDocumentFragment();
-
-            data.results.forEach(function (element) {
-                try {
-                    const card = Lampa.Maker.make('Card', element, function (mod) {
-                        return mod.only('Card', 'Release', 'Callback');
-                    });
-
-                    card.use({
-                        onFocus: function (target, cardData) {
-                            last = target;
-                            active = items.indexOf(card);
-                            scroll.update(card.render(true));
-                            Lampa.Background.change(Lampa.Utils.cardImgBackground(cardData));
+            onSelect: function (item) {
+                if (item.reset) {
+                    filterState[cfg.key] = [];
+                    saveFilterState();
+                    L().Select.hide();
+                    L().Select.show({
+                        title: cfg.title,
+                        items: cfg.items.map(function (i) {
+                            return {
+                                title: i.title,
+                                id: i.id,
+                                checkbox: true,
+                                checked: false
+                            };
+                        }).concat([{ title: 'Очистить', separator: true }, { title: 'Сбросить выбор', reset: true }]),
+                        onCheck: function (sub) {
+                            if (sub.reset) return;
+                            toggleValue(filterState[cfg.key], sub.id, sub.checked);
+                            saveFilterState();
                         },
-                        onTouch: function (target) {
-                            last = target;
-                            active = items.indexOf(card);
+                        onSelect: function (sub) {
+                            if (sub.reset) {
+                                filterState[cfg.key] = [];
+                                saveFilterState();
+                            }
+                            L().Select.hide();
+                            onApply();
                         },
-                        onEnter: function (target, cardData) {
-                            last = target;
-                            Lampa.Activity.push({
-                                url: cardData.url,
-                                component: 'full',
-                                id: element.id,
-                                method: 'movie',
-                                card: element,
-                                source: element.source || 'tmdb'
-                            });
+                        onBack: function () {
+                            onApply();
                         }
                     });
-
-                    card.create();
-                    fragment.appendChild(card.render(true));
-                    items.push(card);
-                } catch (e) {
-                    Logger.warn('Ошибка создания карточки:', e.message);
-                }
-            });
-
-            body.appendChild(fragment);
-
-            if (appendToScroll) {
-                Lampa.Controller.collectionAppend(fragment);
-            }
-
-            Lampa.Controller.collectionSet(scroll.render(true));
-            Lampa.Layer.visible(scroll.render(true));
-        }
-
-        function showEmpty(title, descr) {
-            emptyInstance = new Lampa.Empty({
-                title: title || 'Ничего не найдено',
-                descr: descr || 'Попробуйте изменить фильтры или сбросить их'
-            });
-
-            html.appendChild(emptyInstance.render(true));
-            this.start = emptyInstance.start.bind(emptyInstance);
-            object.activity.loader(false);
-            object.activity.toggle();
-        }
-
-        function fetchFirstPage() {
-            object.activity.loader(true);
-
-            Lampa.Api.list(buildApiObject(1), function (data) {
-                if (destroyed) return;
-
-                if (!data || !isNonEmptyArray(data.results)) {
-                    showEmpty();
                     return;
                 }
-
-                totalPages = data.total_pages || 1;
-                object.page = 1;
-                append(data, false);
-                object.activity.loader(false);
-                object.activity.toggle();
-            }, function () {
-                if (destroyed) return;
-                object.activity.loader(false);
-                showEmpty('Ошибка загрузки', 'Не удалось получить данные от TMDB. Проверьте соединение и попробуйте снова.');
-            });
-        }
-
-        this.create = function () {
-            injectStyles();
-            scroll.minus();
-            scroll.onEnd = onScroll;
-            scroll.onScroll = onScroll;
-
-            html.appendChild(buildFiltersBar());
-            scroll.append(body);
-            html.appendChild(scroll.render(true));
-
-            fetchFirstPage();
-        };
-
-        this.start = function () {
-            Lampa.Controller.add('content', {
-                link: this,
-                toggle: function () {
-                    Lampa.Controller.collectionSet(scroll.render(true));
-                    Lampa.Controller.collectionFocus(last || false, scroll.render(true));
-                },
-                left: function () {
-                    if (Navigator.canmove('left')) {
-                        Navigator.move('left');
-                    } else {
-                        Lampa.Controller.toggle('menu');
-                    }
-                },
-                right: function () {
-                    Navigator.move('right');
-                },
-                up: function () {
-                    if (Navigator.canmove('up')) {
-                        Navigator.move('up');
-                    } else {
-                        Lampa.Controller.toggle('head');
-                    }
-                },
-                down: function () {
-                    if (Navigator.canmove('down')) {
-                        Navigator.move('down');
-                    }
-                },
-                back: function () {
-                    Lampa.Activity.backward();
-                }
-            });
-            Lampa.Controller.toggle('content');
-        };
-
-        this.pause = function () {};
-        this.stop = function () {};
-
-        this.destroy = function () {
-            destroyed = true;
-            items.forEach(function (item) {
-                try {
-                    item.destroy();
-                } catch (e) {}
-            });
-            items = [];
-            scroll.destroy();
-            html.remove();
-            body.remove();
-            if (emptyInstance) {
-                try {
-                    emptyInstance.destroy();
-                } catch (e) {}
-                emptyInstance = null;
+                L().Select.hide();
+                onApply();
+            },
+            onBack: function () {
+                onApply();
             }
-        };
-
-        this.render = function (js) {
-            return js ? html : $(html);
-        };
+        });
     }
 
     /* ============================================================
-     * ДОБАВЛЕНИЕ В МЕНЮ
+     *  РЕГИСТРАЦИЯ В МЕНЮ
      * ============================================================ */
 
+    /**
+     * Добавляет пункт "Ужасы" в главное меню.
+     */
     function addMenuItem() {
-        const menu = $('.menu .menu__list').eq(0);
-        if (!menu.length) return false;
-        if (menu.find('[data-action="' + MENU_ACTION + '"]').length) return true;
+        if (typeof L().Menu === 'undefined' || typeof L().Menu.addButton !== 'function') {
+            console.warn('[Horror] Menu API не доступен');
+            return false;
+        }
 
-        const item = $(
-            '<li class="menu__item selector" data-action="' + MENU_ACTION + '">' +
-                '<div class="menu__ico">' +
-                    '<svg><use xlink:href="#sprite-fire"></use></svg>' +
-                '</div>' +
-                '<div class="menu__text">' + escapeHtml(PLUGIN_NAME) + '</div>' +
-            '</li>'
-        );
+        var icon = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8 2 5 5 5 9V20L8 18L10 20L12 18L14 20L16 18L19 20V9C19 5 16 2 12 2Z" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="9.5" cy="9.5" r="1.5" fill="currentColor"/><circle cx="14.5" cy="9.5" r="1.5" fill="currentColor"/></svg>';
 
-        item.on('hover:enter', function () {
-            Lampa.Activity.push({
-                url: 'discover/movie?' + GENRES_QUERY,
-                title: PLUGIN_NAME,
-                component: COMPONENT_NAME,
-                source: 'tmdb',
-                page: 1,
-                card_type: true
-            });
+        L().Menu.addButton(icon, 'Ужасы', function () {
+            openHorrorCategory();
         });
 
-        menu.append(item);
-        Logger.log('Пункт меню добавлен');
+        console.log('[Horror] Пункт меню добавлен');
         return true;
     }
 
-    function waitForMenu() {
-        if (addMenuItem()) return;
-
-        let attempts = 0;
-        const maxAttempts = 60;
-
-        const interval = setInterval(function () {
-            attempts++;
-            if (addMenuItem() || attempts >= maxAttempts) {
-                clearInterval(interval);
-            }
-        }, 500);
-
-        if (Lampa.Listener) {
-            Lampa.Listener.follow('menu', function (e) {
-                if (e.type === 'end') {
-                    if (addMenuItem()) {
-                        clearInterval(interval);
-                    }
-                }
-            });
-        }
+    /**
+     * Открывает кастомную категорию ужасов.
+     */
+    function openHorrorCategory() {
+        L().Activity.push({
+            url: buildDiscoverUrl(1),
+            title: 'Ужасы',
+            component: 'horror_custom',
+            source: 'tmdb',
+            page: 1
+        });
     }
 
     /* ============================================================
-     * ИНИЦИАЛИЗАЦИЯ
+     *  РЕГИСТРАЦИЯ КОМПОНЕНТА В LAMPA
      * ============================================================ */
 
-    function init() {
-        if (typeof Lampa === 'undefined') {
-            Logger.warn('Lampa не найдена, плагин не загружен');
-            return;
+    function registerComponent() {
+        if (typeof L().Component === 'undefined' || typeof L().Component.add !== 'function') {
+            console.warn('[Horror] Component API не доступен');
+            return false;
         }
 
-        if (!Lampa.Component || typeof Lampa.Component.add !== 'function') {
-            Logger.warn('Lampa.Component.add недоступен, плагин не загружен');
-            return;
-        }
+        L().Component.add('horror_custom', function (object) {
+            var comp = new HorrorComponent(object);
 
-        loadFilterState();
+            // Создаём настоящий Category внутри
+            var categoryObject = {
+                url: buildDiscoverUrl(1),
+                title: object.title || 'Ужасы',
+                source: 'tmdb',
+                page: object.page || 1
+            };
 
-        Lampa.Component.add(COMPONENT_NAME, createHorrorComponent);
+            var inner = L().Maker.make('Category', categoryObject);
 
-        waitForMenu();
+            // Перехватываем onCreate, чтобы добавить фильтр-бар
+            inner.use({
+                onCreate: function () {
+                    var scroll = this.scroll;
+                    var bar = buildFiltersBar(function () {
+                        saveFilterState();
+                        // Пересоздаём категорию с новым URL
+                        var newUrl = filterState.mode === 'search' && filterState.query.trim()
+                            ? buildSearchUrl(1)
+                            : buildDiscoverUrl(1);
+                        this.object.url = newUrl;
+                        this.object.page = 1;
+                        this.activity.refresh();
+                    });
 
-        Logger.log('Плагин инициализирован');
+                    scroll.append(bar);
+                }
+            });
+
+            return inner;
+        });
+
+        console.log('[Horror] Компонент зарегистрирован');
+        return true;
     }
 
-    if (window.appready) {
-        init();
-    } else if (typeof Lampa !== 'undefined' && Lampa.Listener) {
-        Lampa.Listener.follow('app', function (e) {
-            if (e.type === 'ready') {
-                init();
-            }
+    /* ============================================================
+     *  СТИЛИ
+     * ============================================================ */
+
+    function injectStyles() {
+        var css = [
+            '.horror-filters {',
+            '  display: flex;',
+            '  flex-wrap: wrap;',
+            '  gap: 0.6em;',
+            '  padding: 1em;',
+            '  background: rgba(255,255,255,0.04);',
+            '  border-radius: 0.8em;',
+            '  margin-bottom: 1em;',
+            '  align-items: center;',
+            '}',
+            '.horror-filters__btn {',
+            '  display: inline-flex;',
+            '  align-items: center;',
+            '  gap: 0.4em;',
+            '  padding: 0.5em 0.9em;',
+            '  background: rgba(255,255,255,0.08);',
+            '  border-radius: 1.5em;',
+            '  font-size: 0.9em;',
+            '  transition: background 0.2s;',
+            '  cursor: pointer;',
+            '}',
+            '.horror-filters__btn:hover,',
+            '.horror-filters__btn.focus {',
+            '  background: rgba(255,255,255,0.18);',
+            '}',
+            '.horror-filters__count {',
+            '  display: none;',
+            '  background: #e53935;',
+            '  color: #fff;',
+            '  border-radius: 1em;',
+            '  padding: 0.05em 0.5em;',
+            '  font-size: 0.75em;',
+            '  font-weight: 600;',
+            '}',
+            '.horror-filters__search {',
+            '  display: flex;',
+            '  gap: 0.5em;',
+            '  margin-left: auto;',
+            '  align-items: center;',
+            '}',
+            '.horror-search-input {',
+            '  background: rgba(0,0,0,0.3);',
+            '  border: 1px solid rgba(255,255,255,0.15);',
+            '  border-radius: 1.5em;',
+            '  padding: 0.5em 1em;',
+            '  color: #fff;',
+            '  font-size: 0.9em;',
+            '  outline: none;',
+            '  min-width: 12em;',
+            '  transition: border 0.2s;',
+            '}',
+            '.horror-search-input:focus {',
+            '  border-color: rgba(255,255,255,0.5);',
+            '}',
+            '.horror-filters__search-btn,',
+            '.horror-filters__reset {',
+            '  padding: 0.5em 0.9em;',
+            '  background: rgba(255,255,255,0.1);',
+            '  border-radius: 1.5em;',
+            '  font-size: 0.85em;',
+            '  cursor: pointer;',
+            '  transition: background 0.2s;',
+            '}',
+            '.horror-filters__search-btn:hover,',
+            '.horror-filters__reset:hover,',
+            '.horror-filters__search-btn.focus,',
+            '.horror-filters__reset.focus {',
+            '  background: rgba(255,255,255,0.2);',
+            '}',
+            '@media (max-width: 700px) {',
+            '  .horror-filters__search { width: 100%; margin-left: 0; }',
+            '  .horror-search-input { flex: 1; min-width: 0; }',
+            '}'
+        ].join('\n');
+
+        var style = document.createElement('style');
+        style.type = 'text/css';
+        style.appendChild(document.createTextNode(css));
+        document.head.appendChild(style);
+    }
+
+    /* ============================================================
+     *  BOOTSTRAP
+     * ============================================================ */
+
+    /**
+     * Точка входа. Ждём событие 'app:ready' от Lampa.
+     */
+    function bootstrap() {
+        loadFilterState();
+        injectStyles();
+
+        if (!registerComponent()) {
+            console.error('[Horror] Не удалось зарегистрировать компонент');
+            return;
+        }
+
+        // Пытаемся добавить пункт меню — либо сразу, либо после события menu
+        if (!addMenuItem()) {
+            L().Listener.follow('menu', function (e) {
+                if (e.type === 'end' || e.type === 'ready') {
+                    addMenuItem();
+                }
+            });
+        }
+
+        console.log('[Horror] Плагин запущен');
+    }
+
+    // Ждём готовности Lampa
+    if (window.Lampa && window.appready) {
+        bootstrap();
+    } else if (window.Lampa) {
+        window.Lampa.Listener.follow('app', function (e) {
+            if (e.type === 'ready') bootstrap();
         });
     } else {
-        const fallback = setInterval(function () {
-            if (window.appready) {
-                clearInterval(fallback);
-                init();
+        // Lampa ещё не загружена — ждём
+        var waitTimer = setInterval(function () {
+            if (window.Lampa && window.Lampa.Listener) {
+                clearInterval(waitTimer);
+                if (window.appready) bootstrap();
+                else window.Lampa.Listener.follow('app', function (e) {
+                    if (e.type === 'ready') bootstrap();
+                });
             }
-        }, 500);
+        }, 200);
     }
+
 })();
