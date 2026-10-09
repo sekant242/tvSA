@@ -1,12 +1,12 @@
 /* ============================================================
- *  HORROR UNIFIED v4.2 for Lampa 3.3.x
+ *  HORROR UNIFIED v4.3 for Lampa 3.3.x
  *
- *  ИСПРАВЛЕНИЯ v4.2 (относительно v4.1):
- *   - frightenMe: controller_name захватывается ДО открытия модалок
- *   - frightenMe: убран бессмысленный Modal.update/close/open через 50мс
- *   - showFrightenModal удалён (был мёртвый код)
- *   - onDestroy чистка modal_ref
- *   - мелочи по таймингам
+ *  ИСПРАВЛЕНИЯ v4.3 (относительно v4.2):
+ *   - FIX: Modal в Lampa НЕ глобальный, только L.Modal → добавлен alias
+ *   - FIX: кнопка «Испугай меня» ловила только click — добавлен hover:enter
+ *     (без этого на ТВ-пульте кнопка вообще не работала)
+ *   - FIX: все кнопки фильтров, студии, поиска и «Сбросить» — тоже
+ *     теперь реагируют на click + hover:enter через хелпер onActivate()
  * ============================================================ */
 (function () {
     'use strict';
@@ -17,10 +17,19 @@
     if (!window.Lampa) { console.error('[HorrorUnified] Lampa не найдена'); return; }
 
     var L = window.Lampa;
-    var VERSION = '4.2.0';
+    var Modal = L.Modal;                    // FIX v4.3: в Lampa Modal не в глобальной области
+    var VERSION = '4.3.0';
     var COMPONENT = 'horror';
     var TITLE = 'Ужасы';
     var DEFAULT_GENRE = '27|53';
+
+    /* ============================================================
+     *  ХЕЛПЕР ДЛЯ КНОПОК (мышь + тач + ТВ-пульт)
+     * ============================================================ */
+    function onActivate(el, handler) {
+        el.addEventListener('click', handler);
+        el.addEventListener('hover:enter', handler);
+    }
 
     /* ============================================================
      *  ИКОНКИ
@@ -493,7 +502,7 @@
     }
 
     var frighten_running = false;
-    var frighten_controller_name = null;   // FIX v4.2: запоминаем контроллер ДО открытия модалок
+    var frighten_controller_name = null;
 
     function showFrightenLoadingModal() {
         var html = $(
@@ -519,8 +528,7 @@
         if (frighten_running) return;
         frighten_running = true;
 
-        // FIX v4.2: захватываем "родительский" контроллер ДО открытия loading-модалки,
-        // иначе получим 'modal' и после закрытия результирующей модалки попадём в никуда.
+        // Захватываем контроллер ДО открытия лоадер-модалки, иначе получим 'modal'
         frighten_controller_name = L.Controller.enabled().name;
 
         showFrightenLoadingModal();
@@ -550,8 +558,6 @@
             if (shown.length > 100) shown = shown.slice(-100);
             L.Storage.set('horror_frighten_shown', shown);
 
-            // FIX v4.2: убрали бессмысленный Modal.update + повторный close/open через 50мс.
-            // Просто закрываем loading-модалку и открываем сразу результирующую.
             Modal.close();
             Modal.open({
                 title: '💀 Тебе попался...',
@@ -591,7 +597,7 @@
         var btn = document.createElement('div');
         btn.className = 'horror-frighten-btn selector';
         btn.innerHTML = ICON_FRIGHTEN + '<span>Испугай меня</span>';
-        btn.addEventListener('click', frightenMe);
+        onActivate(btn, frightenMe);
         return btn;
     }
 
@@ -745,7 +751,6 @@
         container.appendChild(slotNew);
         container.appendChild(slotCol);
 
-        // Счётчик завершённых запросов — чтобы Layer.update вызывался один раз
         var pending = 3;
         var tryUpdate = function () {
             if (--pending === 0) {
@@ -841,8 +846,6 @@
             var v = (value || '').trim();
             var changed = v !== horror_state.searchQuery;
             horror_state.searchQuery = v;
-            // Input.edit всегда возвращает нас на 'settings_component',
-            // поэтому переключаемся обратно на исходный контроллер
             if (prev && prev !== 'settings_component') L.Controller.toggle(prev);
             if (changed) onChange();
         });
@@ -859,7 +862,7 @@
         var genreBtn = document.createElement('div');
         genreBtn.className = 'horror-filter-btn selector';
         genreBtn.textContent = genreLabel;
-        genreBtn.addEventListener('click', function () { openGenreFilter(onChange); });
+        onActivate(genreBtn, function () { openGenreFilter(onChange); });
         bar.appendChild(genreBtn);
 
         MULTI_FILTERS.forEach(function (def) {
@@ -873,7 +876,7 @@
                 span.textContent = count;
                 btn.appendChild(span);
             }
-            btn.addEventListener('click', function () { openMultiFilter(def, onChange); });
+            onActivate(btn, function () { openMultiFilter(def, onChange); });
             bar.appendChild(btn);
         });
 
@@ -895,7 +898,7 @@
                 studioBtn.appendChild(txt);
             } else studioBtn.textContent = 'Студия';
         } else studioBtn.textContent = 'Студия';
-        studioBtn.addEventListener('click', function () { openStudioFilter(onChange); });
+        onActivate(studioBtn, function () { openStudioFilter(onChange); });
         bar.appendChild(studioBtn);
 
         var searchBtn = document.createElement('div');
@@ -903,14 +906,14 @@
         searchBtn.textContent = horror_state.searchQuery
             ? 'Поиск: ' + horror_state.searchQuery.slice(0, 20)
             : 'Поиск';
-        searchBtn.addEventListener('click', function () { openSearchInput(onChange); });
+        onActivate(searchBtn, function () { openSearchInput(onChange); });
         bar.appendChild(searchBtn);
 
         if (hasActiveFilters()) {
             var resetBtn = document.createElement('div');
             resetBtn.className = 'horror-filter-btn horror-filter-reset selector';
             resetBtn.textContent = 'Сбросить';
-            resetBtn.addEventListener('click', function () { resetFilters(); onChange(); });
+            onActivate(resetBtn, function () { resetFilters(); onChange(); });
             bar.appendChild(resetBtn);
         }
         return bar;
@@ -942,8 +945,6 @@
                 topSection.appendChild(buildFrightenButton());
                 topSection.appendChild(buildRowsContainer());
 
-                // this.body — DOM-элемент (Base создаёт его через document.createElement).
-                // Вставляем в него topSection как первый child — тогда grid-column:1/-1 работает.
                 var body = (this.body && this.body.nodeType === 1) ? this.body
                          : (this.scroll && this.scroll.body ? this.scroll.body(true) : null);
                 if (body && body.nodeType === 1) {
@@ -978,7 +979,7 @@
                 resetBtn.className = 'simple-button selector';
                 resetBtn.style.margin = '1em auto';
                 resetBtn.textContent = 'Сбросить фильтры';
-                resetBtn.addEventListener('click', function () {
+                onActivate(resetBtn, function () {
                     resetFilters();
                     L.Activity.replace(buildActivityObject());
                 });
