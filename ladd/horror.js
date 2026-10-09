@@ -1,14 +1,20 @@
 /* ============================================================
  *  HORROR UNIFIED v4.1 for Lampa 3.3.x
- *  - Раздел «Ужасы» с фильтрами
- *  - Кнопка «Испугай меня» → модалка с превью случайного фильма
- *  - Ряд «Рекомендуем посмотреть»
- *  - Ряд «Новые ужасы»
- *  - Ряд «Подборки»
- *  - Темы карточек и оверлей-эффекты — только на странице «Ужасы»
- *  - Настройки: «Настройки → Хоррор»
  *
- *  Все запросы к TMDB идут через L.TMDB.get() (с api_key и прокси).
+ *  ИСПРАВЛЕНИЯ v4.1:
+ *   - Все запросы к TMDB теперь с api_key (главный баг v4.0)
+ *   - TopSection вставляется в this.body (grid) как grid-column: 1/-1
+ *   - «Испугай меня» показывает модалку с постером и кнопками
+ *
+ *  ФУНКЦИИ:
+ *   1. Раздел «Ужасы» в меню
+ *   2. Кнопка «Испугай меня» (модалка со случайным фильмом)
+ *   3. Ряд «Рекомендуем посмотреть»
+ *   4. Ряд «Новые ужасы»
+ *   5. Ряд «Подборки»
+ *   6. Сетка отфильтрованных фильмов
+ *   7. Расширенные фильтры
+ *   8. Темы карточек и оверлей-эффекты — только на странице «Ужасы»
  * ============================================================ */
 (function () {
     'use strict';
@@ -43,7 +49,6 @@
     var ICON_FRIGHTEN =
         '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
         '<path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12c0 3.18 1.46 5.95 3.7 7.72V21c0 .55.45 1 1 1h1v-1c0-.55.45-1 1-1h6c.55 0 1 .45 1 1v1h1c.55 0 1-.45 1-1v-1.28C20.54 17.95 22 15.18 22 12c0-5.52-4.48-10-10-10zm-3.5 12c-.83 0-1.5-.67-1.5-1.5S7.67 11 8.5 11s1.5.67 1.5 1.5S9.33 14 8.5 14zm7 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>' +
-        '<path fill="currentColor" d="M9 17c.4-.9 1.5-1.5 3-1.5s2.6.6 3 1.5H9z" opacity=".8"/>' +
         '</svg>';
 
     /* ============================================================
@@ -99,13 +104,28 @@
         { title: 'Слэшеры',             keywords: '234452' }
     ];
 
+    /* ============================================================
+     *  СОСТОЯНИЕ
+     * ============================================================ */
     var horror_state = {
         genre: DEFAULT_GENRE, languages: [], subgenres: [], studio: null, searchQuery: ''
     };
     var studioLogosCache = {};
 
     /* ============================================================
-     *  ХЕЛПЕРЫ
+     *  ГЛАВНЫЙ ФИКС: правильный URL к TMDB с api_key
+     * ============================================================ */
+    function tmdbUrl(path_query) {
+        var lang = L.Storage.field('tmdb_lang') || 'ru';
+        var sep = path_query.indexOf('?') >= 0 ? '&' : '?';
+        return L.TMDB.api(path_query + sep + 'api_key=' + L.TMDB.key() + '&language=' + lang);
+    }
+    function tmdbRequest(path_query, success, error) {
+        L.Network.silent(tmdbUrl(path_query), success, error || function () {}, false, { timeout: 15000 });
+    }
+
+    /* ============================================================
+     *  ХЕЛПЕРЫ ФИЛЬТРОВ
      * ============================================================ */
     function hasActiveFilters() {
         return horror_state.languages.length || horror_state.subgenres.length ||
@@ -145,28 +165,14 @@
         return obj;
     }
 
-    /* Единая обёртка над L.TMDB.get — гарантирует ключ + прокси + язык */
-    function tmdbGet(method, filter, cb, err, cache) {
-        var params = {};
-        if (filter) params.filter = filter;
-        try {
-            L.TMDB.get(method, params, cb, err || function () {}, cache);
-        } catch (e) {
-            console.error('[HorrorUnified] TMDB request error:', e);
-            if (err) err(e);
-        }
-    }
-
     function loadStudioLogos(cb) {
         var ids = STUDIOS.map(function (s) { return s.id; });
         var pending = ids.length;
         if (!pending) return cb && cb();
         ids.forEach(function (id) {
             if (studioLogosCache.hasOwnProperty(id)) { if (--pending === 0) cb && cb(); return; }
-            tmdbGet('company/' + id, null, function (data) {
-                studioLogosCache[id] = data && data.logo_path
-                    ? L.TMDB.image('t/p/w200' + data.logo_path)
-                    : null;
+            tmdbRequest('company/' + id, function (data) {
+                studioLogosCache[id] = data && data.logo_path ? L.TMDB.image('t/p/w200' + data.logo_path) : null;
                 if (--pending === 0) cb && cb();
             }, function () {
                 studioLogosCache[id] = null;
@@ -183,14 +189,10 @@
         var style = document.createElement('style');
         style.id = 'horror-unified-styles';
         style.textContent = [
-            /* ============ Top section ============ */
-            '.horror-top-section{grid-column:1 / -1;width:100%;box-sizing:border-box;',
-            'padding:0 0 1em 0;position:relative;z-index:1}',
-            '.horror-rows{width:100%;display:block}',
-            '.horror-row-slot{width:100%;display:block;min-height:22em}',
-            '.horror-row-slot:empty{min-height:0}',
+            /* Top section fills full grid width */
+            '.horror-top-section{grid-column:1 / -1;width:100%;box-sizing:border-box;padding:0 0 1.2em 0;position:relative;z-index:1}',
 
-            /* ============ Filters ============ */
+            /* Filters */
             '.horror-filters{display:flex;align-items:center;gap:.5em;flex-wrap:wrap;',
             'padding:.6em .8em;margin:0 0 1em 0;background:rgba(0,0,0,.35);border-radius:1.2em;',
             'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);',
@@ -208,7 +210,7 @@
             '.horror-studio-item .selectbox-item__icon img{height:1.6em;width:auto;max-width:6em;object-fit:contain}',
             '.horror-studio-item .selectbox-item__icon{background:transparent!important;padding:.2em}',
 
-            /* ============ Frighten button ============ */
+            /* Frighten button */
             '.horror-frighten-btn{display:flex;align-items:center;justify-content:center;gap:1em;',
             'padding:1.15em 2em;margin:0 0 1.5em 0;',
             'background:linear-gradient(135deg,#4a0000 0%,#8b0000 25%,#dc143c 50%,#8b0000 75%,#4a0000 100%);',
@@ -218,38 +220,52 @@
             'text-shadow:0 0 12px rgba(255,100,100,.9), 0 0 4px rgba(0,0,0,.8);',
             'animation:hfx-frighten-pulse 3s ease-in-out infinite, hfx-frighten-gradient 10s ease infinite;',
             'transition:transform .15s, box-shadow .15s;user-select:none}',
-            '.horror-frighten-btn:hover,.horror-frighten-btn.focus{transform:scale(1.02);',
+            '.horror-frighten-btn:hover,.horror-frighten-btn.focus{',
+            'transform:scale(1.02);',
             'box-shadow:0 0 60px rgba(255,30,60,.9), inset 0 0 30px rgba(255,100,100,.3)!important}',
-            '.horror-frighten-btn svg{width:1.6em;height:1.6em;flex-shrink:0;',
-            'filter:drop-shadow(0 0 6px rgba(255,100,100,.8))}',
+            '.horror-frighten-btn svg{width:1.6em;height:1.6em;flex-shrink:0;filter:drop-shadow(0 0 6px rgba(255,100,100,.8))}',
             '.horror-frighten-btn span{letter-spacing:.02em}',
+            '.horror-frighten-btn.loading{opacity:.6;pointer-events:none;filter:grayscale(.5)}',
             '@keyframes hfx-frighten-pulse{',
             '0%,100%{box-shadow:0 0 30px rgba(220,20,60,.35), inset 0 0 20px rgba(0,0,0,.3)}',
             '50%{box-shadow:0 0 55px rgba(255,30,60,.75), inset 0 0 30px rgba(255,50,50,.25)}}',
             '@keyframes hfx-frighten-gradient{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}',
 
-            /* ============ Modal preview ============ */
-            '.horror-preview{display:flex;gap:1.2em;padding:1em 0}',
-            '.horror-preview__poster{flex-shrink:0;width:10em;border-radius:.6em;overflow:hidden;',
-            'box-shadow:0 8px 32px rgba(0,0,0,.6)}',
-            '.horror-preview__poster img{width:100%;display:block;aspect-ratio:2/3;object-fit:cover}',
-            '.horror-preview__body{flex:1;min-width:0;display:flex;flex-direction:column;gap:.5em}',
-            '.horror-preview__title{font-size:1.35em;font-weight:600;line-height:1.2}',
-            '.horror-preview__meta{display:flex;gap:.8em;flex-wrap:wrap;font-size:.9em;opacity:.75}',
-            '.horror-preview__overview{font-size:.95em;line-height:1.5;opacity:.85;max-height:12em;overflow:auto}',
-            '.horror-preview__badge{display:inline-block;padding:.15em .55em;background:rgba(220,20,60,.35);',
-            'border-radius:.5em;font-size:.85em}',
+            /* Rows */
+            '.horror-rows{width:100%}',
+            '.horror-row-slot{width:100%}',
+            '.horror-row-slot .items-line{padding:0;margin:0 0 1.2em 0}',
 
-            /* ============ Overlay effects layer ============ */
-            '.horror-fx-layer{position:fixed;inset:0;pointer-events:none;display:none;z-index:120;overflow:hidden}',
+            /* Frighten modal */
+            '.hfm{display:flex;gap:1.2em;padding:0 0 .5em 0;min-height:200px}',
+            '.hfm__poster{flex:0 0 220px;max-width:220px}',
+            '.hfm__poster img{width:100%;border-radius:.6em;box-shadow:0 0 30px rgba(180,0,0,.5)}',
+            '.hfm__poster--empty{background:rgba(255,255,255,.05);border-radius:.6em;display:flex;align-items:center;justify-content:center;color:#666;font-size:3em;min-height:300px}',
+            '.hfm__body{flex:1;min-width:0}',
+            '.hfm__title{font-size:1.4em;font-weight:600;margin-bottom:.4em;line-height:1.2}',
+            '.hfm__meta{opacity:.75;margin-bottom:1em;font-size:.92em;display:flex;gap:.8em;flex-wrap:wrap}',
+            '.hfm__meta b{color:#ff6b6b;font-weight:600}',
+            '.hfm__overview{line-height:1.55;font-size:.95em;max-height:230px;overflow-y:auto;padding-right:.3em}',
+            '.hfm__overview::-webkit-scrollbar{width:4px}',
+            '.hfm__overview::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:2px}',
+            '.hfm__loading{display:flex;align-items:center;justify-content:center;min-height:260px;color:#999;font-size:1.1em;flex-direction:column;gap:1em;width:100%}',
+            '.hfm__loading-spinner{width:3em;height:3em;border:3px solid rgba(255,255,255,.15);',
+            'border-top-color:#dc143c;border-radius:50%;animation:hfm-spin 1s linear infinite}',
+            '@keyframes hfm-spin{to{transform:rotate(360deg)}}',
+
+            /* Overlay effects layer */
+            '.horror-fx-layer{position:fixed;inset:0;pointer-events:none;display:none;z-index:90;overflow:hidden}',
             'body.horror-page .horror-fx-layer{display:block}',
             '.horror-fx-layer > *{position:absolute;inset:0;pointer-events:none}',
+
             '.horror-fx-canvas{width:100%;height:100%;display:none;image-rendering:pixelated;mix-blend-mode:screen;opacity:.5}',
             'body.horror-page[data-horror-fx~="noise"] .horror-fx-canvas{display:block}',
+
             '.horror-fx-scanlines{display:none;opacity:.5;',
             'background:repeating-linear-gradient(0deg,rgba(0,0,0,.35) 0px,rgba(0,0,0,.35) 1px,transparent 1px,transparent 3px)}',
             'body.horror-page[data-horror-fx~="scanline"] .horror-fx-scanlines{display:block;animation:hfx-scanmove 8s linear infinite}',
             '@keyframes hfx-scanmove{0%{background-position:0 0}100%{background-position:0 12px}}',
+
             '.horror-fx-vhs{display:none;opacity:.5;',
             'background:linear-gradient(180deg,transparent 0,transparent 40%,rgba(255,255,255,.06) 50%,transparent 60%,transparent 100%);',
             'mix-blend-mode:overlay}',
@@ -259,17 +275,21 @@
             'background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);',
             'animation:hfx-vhsband 5s linear infinite}',
             '@keyframes hfx-vhsband{0%{top:0}100%{top:100%}}',
+
             '.horror-fx-chroma{display:none;mix-blend-mode:screen;opacity:.35}',
             'body.horror-page[data-horror-fx~="chroma"] .horror-fx-chroma{display:block;',
             'background:linear-gradient(90deg,rgba(255,0,0,.15) 0,transparent 3%,transparent 97%,rgba(0,255,255,.15) 100%);',
             'animation:hfx-chroma 4s ease-in-out infinite}',
             '@keyframes hfx-chroma{0%,100%{transform:translateX(0)}50%{transform:translateX(2px)}}',
+
             '.horror-fx-vignette{display:none;',
             'background:radial-gradient(ellipse at center,transparent 35%,rgba(0,0,0,.55) 85%,rgba(0,0,0,.85) 100%)}',
             'body.horror-page[data-horror-fx~="vignette"] .horror-fx-vignette{display:block}',
+
             '.horror-fx-flicker{display:none;background:#fff;mix-blend-mode:overlay}',
             'body.horror-page[data-horror-fx~="flicker"] .horror-fx-flicker{display:block;animation:hfx-flick 6s steps(1) infinite}',
             '@keyframes hfx-flick{0%,98%,100%{opacity:0}98.5%{opacity:.12}99%{opacity:0}99.3%{opacity:.08}}',
+
             '.horror-fx-dust{display:none;mix-blend-mode:screen}',
             'body.horror-page[data-horror-fx~="dust"] .horror-fx-dust{display:block}',
             '.horror-fx-dust::before,.horror-fx-dust::after{content:"";position:absolute;inset:-20%;',
@@ -278,6 +298,7 @@
             'animation:hfx-dust 40s linear infinite}',
             '.horror-fx-dust::after{background-size:180px 180px, 320px 320px;animation-duration:65s;animation-direction:reverse;opacity:.25}',
             '@keyframes hfx-dust{0%{transform:translate3d(0,0,0)}100%{transform:translate3d(-100px,-100px,0)}}',
+
             'body.horror-page[data-horror-fx~="shake"] .card__view{animation:hfx-shake 4s ease-in-out infinite}',
             '@keyframes hfx-shake{0%,92%,100%{transform:translateX(0)}93%{transform:translateX(-2px)}94%{transform:translateX(2px)}95%{transform:translateX(-1px)}96%{transform:translateX(0)}}',
             'body.horror-page[data-horror-fx~="wobble"] .card__view{animation:hfx-wobble 8s ease-in-out infinite}',
@@ -289,59 +310,69 @@
     }
 
     /* ============================================================
-     *  ТЕМЫ
+     *  ТЕМЫ КАРТОЧЕК
      * ============================================================ */
     var CARD_THEMES = [
         { id: 'blood_moon', name: 'Кровавая Луна',
-          css: '.horror-page[data-horror-theme="blood_moon"] .card__view{filter:sepia(.35) contrast(1.6) brightness(.7) hue-rotate(-20deg)!important;box-shadow:0 0 20px rgba(180,0,0,.75), inset 0 0 40px rgba(120,0,0,.55)!important}' +
-               '.horror-page[data-horror-theme="blood_moon"] .card__title{color:#ff3b3b!important;text-shadow:0 0 8px rgba(255,0,0,.9)}' +
-               '.horror-page[data-horror-theme="blood_moon"] .card__age{color:#ff6b6b!important}' +
-               '.horror-page[data-horror-theme="blood_moon"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:radial-gradient(circle at 30% 40%,transparent 55%,rgba(80,0,0,.65) 100%),repeating-linear-gradient(0deg,rgba(255,0,0,.05) 0,rgba(255,0,0,.05) 1px,transparent 1px,transparent 4px)}'
+          css:
+          '.horror-page[data-horror-theme="blood_moon"] .card__view{filter:sepia(.35) contrast(1.6) brightness(.7) hue-rotate(-20deg)!important;box-shadow:0 0 20px rgba(180,0,0,.75), inset 0 0 40px rgba(120,0,0,.55)!important}' +
+          '.horror-page[data-horror-theme="blood_moon"] .card__title{color:#ff3b3b!important;text-shadow:0 0 8px rgba(255,0,0,.9)}' +
+          '.horror-page[data-horror-theme="blood_moon"] .card__age{color:#ff6b6b!important}' +
+          '.horror-page[data-horror-theme="blood_moon"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:radial-gradient(circle at 30% 40%,transparent 55%,rgba(80,0,0,.65) 100%),repeating-linear-gradient(0deg,rgba(255,0,0,.05) 0,rgba(255,0,0,.05) 1px,transparent 1px,transparent 4px)}'
         },
         { id: 'bone_chill', name: 'Мороз по Коже',
-          css: '.horror-page[data-horror-theme="bone_chill"] .card__view{filter:contrast(1.4) saturate(.25) brightness(.85) hue-rotate(180deg)!important;box-shadow:0 0 18px rgba(200,230,255,.55), inset 0 0 30px rgba(100,140,180,.45)!important}' +
-               '.horror-page[data-horror-theme="bone_chill"] .card__title{color:#c8e4ff!important;text-shadow:0 0 10px rgba(160,210,255,.9);letter-spacing:.05em}' +
-               '.horror-page[data-horror-theme="bone_chill"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:linear-gradient(180deg,rgba(180,220,255,.18) 0,transparent 40%,rgba(100,140,200,.22) 100%),repeating-linear-gradient(90deg,rgba(200,230,255,.04) 0,rgba(200,230,255,.04) 2px,transparent 2px,transparent 6px)}'
+          css:
+          '.horror-page[data-horror-theme="bone_chill"] .card__view{filter:contrast(1.4) saturate(.25) brightness(.85) hue-rotate(180deg)!important;box-shadow:0 0 18px rgba(200,230,255,.55), inset 0 0 30px rgba(100,140,180,.45)!important}' +
+          '.horror-page[data-horror-theme="bone_chill"] .card__title{color:#c8e4ff!important;text-shadow:0 0 10px rgba(160,210,255,.9);letter-spacing:.05em}' +
+          '.horror-page[data-horror-theme="bone_chill"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:linear-gradient(180deg,rgba(180,220,255,.18) 0,transparent 40%,rgba(100,140,200,.22) 100%),repeating-linear-gradient(90deg,rgba(200,230,255,.04) 0,rgba(200,230,255,.04) 2px,transparent 2px,transparent 6px)}'
         },
         { id: 'cursed_sigil', name: 'Проклятый Знак',
-          css: '.horror-page[data-horror-theme="cursed_sigil"] .card__view{filter:contrast(1.35) hue-rotate(270deg) brightness(.6)!important;box-shadow:0 0 24px rgba(140,0,200,.85), inset 0 0 50px rgba(60,0,100,.65)!important}' +
-               '.horror-page[data-horror-theme="cursed_sigil"] .card__title{color:#d48aff!important;text-shadow:0 0 12px rgba(180,0,255,.95)}' +
-               '.horror-page[data-horror-theme="cursed_sigil"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:repeating-linear-gradient(45deg,transparent 0,transparent 12px,rgba(160,0,220,.14) 12px,rgba(160,0,220,.14) 14px),repeating-linear-gradient(-45deg,transparent 0,transparent 12px,rgba(160,0,220,.14) 12px,rgba(160,0,220,.14) 14px)}'
+          css:
+          '.horror-page[data-horror-theme="cursed_sigil"] .card__view{filter:contrast(1.35) hue-rotate(270deg) brightness(.6)!important;box-shadow:0 0 24px rgba(140,0,200,.85), inset 0 0 50px rgba(60,0,100,.65)!important}' +
+          '.horror-page[data-horror-theme="cursed_sigil"] .card__title{color:#d48aff!important;text-shadow:0 0 12px rgba(180,0,255,.95)}' +
+          '.horror-page[data-horror-theme="cursed_sigil"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:repeating-linear-gradient(45deg,transparent 0,transparent 12px,rgba(160,0,220,.14) 12px,rgba(160,0,220,.14) 14px),repeating-linear-gradient(-45deg,transparent 0,transparent 12px,rgba(160,0,220,.14) 12px,rgba(160,0,220,.14) 14px)}'
         },
         { id: 'asylum', name: 'Приют',
-          css: '.horror-page[data-horror-theme="asylum"] .card__view{filter:grayscale(.85) contrast(1.55) brightness(.55) sepia(.25)!important;box-shadow:0 0 16px rgba(140,120,60,.65), inset 0 0 35px rgba(80,60,20,.55)!important}' +
-               '.horror-page[data-horror-theme="asylum"] .card__title{color:#c4a35a!important;text-shadow:0 0 8px rgba(180,140,40,.75);font-family:Georgia,serif}' +
-               '.horror-page[data-horror-theme="asylum"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:repeating-linear-gradient(90deg,transparent 0,transparent 4px,rgba(100,80,30,.1) 4px,rgba(100,80,30,.1) 5px),repeating-linear-gradient(0deg,transparent 0,transparent 5px,rgba(40,30,10,.15) 5px,rgba(40,30,10,.15) 6px)}'
+          css:
+          '.horror-page[data-horror-theme="asylum"] .card__view{filter:grayscale(.85) contrast(1.55) brightness(.55) sepia(.25)!important;box-shadow:0 0 16px rgba(140,120,60,.65), inset 0 0 35px rgba(80,60,20,.55)!important}' +
+          '.horror-page[data-horror-theme="asylum"] .card__title{color:#c4a35a!important;text-shadow:0 0 8px rgba(180,140,40,.75);font-family:Georgia,serif}' +
+          '.horror-page[data-horror-theme="asylum"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:repeating-linear-gradient(90deg,transparent 0,transparent 4px,rgba(100,80,30,.1) 4px,rgba(100,80,30,.1) 5px),repeating-linear-gradient(0deg,transparent 0,transparent 5px,rgba(40,30,10,.15) 5px,rgba(40,30,10,.15) 6px)}'
         },
         { id: 'veil', name: 'Пелена',
-          css: '.horror-page[data-horror-theme="veil"] .card__view{filter:brightness(.5) contrast(1.75) saturate(.4)!important;box-shadow:0 0 32px rgba(0,0,0,.95), inset 0 0 80px rgba(0,0,0,.85)!important}' +
-               '.horror-page[data-horror-theme="veil"] .card__title{color:#999!important;text-shadow:0 0 14px rgba(0,0,0,1)}' +
-               '.horror-page[data-horror-theme="veil"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:radial-gradient(ellipse at center,transparent 25%,rgba(0,0,0,.92) 100%)}'
+          css:
+          '.horror-page[data-horror-theme="veil"] .card__view{filter:brightness(.5) contrast(1.75) saturate(.4)!important;box-shadow:0 0 32px rgba(0,0,0,.95), inset 0 0 80px rgba(0,0,0,.85)!important}' +
+          '.horror-page[data-horror-theme="veil"] .card__title{color:#999!important;text-shadow:0 0 14px rgba(0,0,0,1)}' +
+          '.horror-page[data-horror-theme="veil"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:radial-gradient(ellipse at center,transparent 25%,rgba(0,0,0,.92) 100%)}'
         },
         { id: 'ritual', name: 'Ритуал',
-          css: '.horror-page[data-horror-theme="ritual"] .card__view{filter:contrast(1.55) saturate(1.5) hue-rotate(-40deg) brightness(.65)!important;box-shadow:0 0 26px rgba(255,60,0,.75), inset 0 0 45px rgba(150,20,0,.55)!important}' +
-               '.horror-page[data-horror-theme="ritual"] .card__title{color:#ff7b00!important;text-shadow:0 0 12px rgba(255,80,0,.95)}' +
-               '.horror-page[data-horror-theme="ritual"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:radial-gradient(circle at 50% 85%,rgba(255,60,0,.28) 0,transparent 60%),repeating-linear-gradient(0deg,rgba(255,100,0,.06) 0,rgba(255,100,0,.06) 1px,transparent 1px,transparent 5px)}'
+          css:
+          '.horror-page[data-horror-theme="ritual"] .card__view{filter:contrast(1.55) saturate(1.5) hue-rotate(-40deg) brightness(.65)!important;box-shadow:0 0 26px rgba(255,60,0,.75), inset 0 0 45px rgba(150,20,0,.55)!important}' +
+          '.horror-page[data-horror-theme="ritual"] .card__title{color:#ff7b00!important;text-shadow:0 0 12px rgba(255,80,0,.95)}' +
+          '.horror-page[data-horror-theme="ritual"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:radial-gradient(circle at 50% 85%,rgba(255,60,0,.28) 0,transparent 60%),repeating-linear-gradient(0deg,rgba(255,100,0,.06) 0,rgba(255,100,0,.06) 1px,transparent 1px,transparent 5px)}'
         },
         { id: 'flesh', name: 'Плоть',
-          css: '.horror-page[data-horror-theme="flesh"] .card__view{filter:sepia(.65) saturate(1.85) hue-rotate(-10deg) contrast(1.35) brightness(.6)!important;box-shadow:0 0 22px rgba(200,80,60,.75), inset 0 0 40px rgba(120,40,20,.55)!important}' +
-               '.horror-page[data-horror-theme="flesh"] .card__title{color:#e88a7a!important;text-shadow:0 0 10px rgba(200,80,50,.85)}' +
-               '.horror-page[data-horror-theme="flesh"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:radial-gradient(circle at 30% 20%,rgba(255,120,90,.15),transparent 60%),radial-gradient(circle at 70% 80%,rgba(180,40,20,.2),transparent 60%)}'
+          css:
+          '.horror-page[data-horror-theme="flesh"] .card__view{filter:sepia(.65) saturate(1.85) hue-rotate(-10deg) contrast(1.35) brightness(.6)!important;box-shadow:0 0 22px rgba(200,80,60,.75), inset 0 0 40px rgba(120,40,20,.55)!important}' +
+          '.horror-page[data-horror-theme="flesh"] .card__title{color:#e88a7a!important;text-shadow:0 0 10px rgba(200,80,50,.85)}' +
+          '.horror-page[data-horror-theme="flesh"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:radial-gradient(circle at 30% 20%,rgba(255,120,90,.15),transparent 60%),radial-gradient(circle at 70% 80%,rgba(180,40,20,.2),transparent 60%)}'
         },
         { id: 'whisper', name: 'Шёпот',
-          css: '.horror-page[data-horror-theme="whisper"] .card__view{filter:brightness(.45) contrast(1.85) blur(.4px)!important;box-shadow:0 0 28px rgba(60,80,120,.65), inset 0 0 60px rgba(20,30,60,.75)!important}' +
-               '.horror-page[data-horror-theme="whisper"] .card__title{color:#7a9ec4!important;text-shadow:0 0 16px rgba(60,100,180,.75);font-style:italic}' +
-               '.horror-page[data-horror-theme="whisper"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:linear-gradient(180deg,transparent 50%,rgba(10,20,50,.65) 100%)}'
+          css:
+          '.horror-page[data-horror-theme="whisper"] .card__view{filter:brightness(.45) contrast(1.85) blur(.4px)!important;box-shadow:0 0 28px rgba(60,80,120,.65), inset 0 0 60px rgba(20,30,60,.75)!important}' +
+          '.horror-page[data-horror-theme="whisper"] .card__title{color:#7a9ec4!important;text-shadow:0 0 16px rgba(60,100,180,.75);font-style:italic}' +
+          '.horror-page[data-horror-theme="whisper"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:linear-gradient(180deg,transparent 50%,rgba(10,20,50,.65) 100%)}'
         },
         { id: 'grave_dirt', name: 'Могильная Земля',
-          css: '.horror-page[data-horror-theme="grave_dirt"] .card__view{filter:grayscale(.9) contrast(1.6) brightness(.5) sepia(.4)!important;box-shadow:0 0 18px rgba(60,50,30,.85), inset 0 0 50px rgba(30,25,10,.75)!important}' +
-               '.horror-page[data-horror-theme="grave_dirt"] .card__title{color:#8a7a5a!important;text-shadow:0 0 10px rgba(60,50,20,1);font-family:Georgia,serif;letter-spacing:.08em}' +
-               '.horror-page[data-horror-theme="grave_dirt"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:repeating-linear-gradient(0deg,transparent 0,transparent 3px,rgba(40,35,15,.12) 3px,rgba(40,35,15,.12) 4px),repeating-linear-gradient(90deg,transparent 0,transparent 5px,rgba(60,50,20,.08) 5px,rgba(60,50,20,.08) 6px)}'
+          css:
+          '.horror-page[data-horror-theme="grave_dirt"] .card__view{filter:grayscale(.9) contrast(1.6) brightness(.5) sepia(.4)!important;box-shadow:0 0 18px rgba(60,50,30,.85), inset 0 0 50px rgba(30,25,10,.75)!important}' +
+          '.horror-page[data-horror-theme="grave_dirt"] .card__title{color:#8a7a5a!important;text-shadow:0 0 10px rgba(60,50,20,1);font-family:Georgia,serif;letter-spacing:.08em}' +
+          '.horror-page[data-horror-theme="grave_dirt"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:repeating-linear-gradient(0deg,transparent 0,transparent 3px,rgba(40,35,15,.12) 3px,rgba(40,35,15,.12) 4px),repeating-linear-gradient(90deg,transparent 0,transparent 5px,rgba(60,50,20,.08) 5px,rgba(60,50,20,.08) 6px)}'
         },
         { id: 'abyss', name: 'Бездна',
-          css: '.horror-page[data-horror-theme="abyss"] .card__view{filter:brightness(.35) contrast(2) saturate(.3)!important;box-shadow:0 0 38px rgba(0,0,0,1), inset 0 0 70px rgba(0,0,0,.95)!important}' +
-               '.horror-page[data-horror-theme="abyss"] .card__title{color:#4a6a8a!important;text-shadow:0 0 22px rgba(20,40,80,.85);opacity:.85}' +
-               '.horror-page[data-horror-theme="abyss"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:radial-gradient(ellipse at 50% 50%,transparent 8%,rgba(0,0,0,.96) 90%)}'
+          css:
+          '.horror-page[data-horror-theme="abyss"] .card__view{filter:brightness(.35) contrast(2) saturate(.3)!important;box-shadow:0 0 38px rgba(0,0,0,1), inset 0 0 70px rgba(0,0,0,.95)!important}' +
+          '.horror-page[data-horror-theme="abyss"] .card__title{color:#4a6a8a!important;text-shadow:0 0 22px rgba(20,40,80,.85);opacity:.85}' +
+          '.horror-page[data-horror-theme="abyss"] .card__view::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:3;background:radial-gradient(ellipse at 50% 50%,transparent 8%,rgba(0,0,0,.96) 90%)}'
         }
     ];
 
@@ -384,10 +415,7 @@
         fx_canvas.width  = Math.max(240, Math.floor(window.innerWidth  / 3));
         fx_canvas.height = Math.max(160, Math.floor(window.innerHeight / 3));
     }
-    function startNoise() {
-        if (fx_noise_timer || !fx_ctx) return;
-        tickNoise();
-    }
+    function startNoise() { if (fx_noise_timer || !fx_ctx) return; tickNoise(); }
     function stopNoise() {
         if (fx_noise_timer) { clearTimeout(fx_noise_timer); fx_noise_timer = null; }
         if (fx_ctx && fx_canvas) fx_ctx.clearRect(0, 0, fx_canvas.width, fx_canvas.height);
@@ -429,62 +457,75 @@
         if (is_horror) {
             var t = L.Storage.get('horror_fx', '');
             if (t) applyFxAttribute(t);
-        } else stopNoise();
+        } else {
+            stopNoise();
+        }
     }
 
     /* ============================================================
-     *  «ИСПУГАЙ МЕНЯ» — модалка с превью
+     *  «ИСПУГАЙ МЕНЯ» — модалка со случайным фильмом
      * ============================================================ */
     var FRIGHTEN_QUERIES = [
-        { with_genres: 27, sort_by: 'vote_average.desc', 'vote_count.gte': 3000, 'vote_average.gte': 7.2 },
-        { with_genres: 27, with_keywords: 9715,  sort_by: 'vote_average.desc', 'vote_count.gte': 800,  'vote_average.gte': 6.8 },
-        { with_genres: 27, with_keywords: 162403, sort_by: 'vote_average.desc', 'vote_count.gte': 500, 'vote_average.gte': 6.5 },
-        { with_genres: 27, with_keywords: 10427, sort_by: 'vote_average.desc', 'vote_count.gte': 500,  'vote_average.gte': 6.5 },
-        { with_genres: 27, with_keywords: 158718, sort_by: 'vote_average.desc', 'vote_count.gte': 300, 'vote_average.gte': 6 },
-        { with_genres: 27, with_keywords: '288394|10541', sort_by: 'vote_average.desc', 'vote_count.gte': 800, 'vote_average.gte': 6.5 }
+        'discover/movie?with_genres=27&sort_by=vote_average.desc&vote_count.gte=3000&vote_average.gte=7.2',
+        'discover/movie?with_genres=27&with_keywords=9715&sort_by=vote_average.desc&vote_count.gte=800&vote_average.gte=6.8',
+        'discover/movie?with_genres=27&with_keywords=162403&sort_by=vote_average.desc&vote_count.gte=500&vote_average.gte=6.5',
+        'discover/movie?with_genres=27&with_keywords=10427&sort_by=vote_average.desc&vote_count.gte=500&vote_average.gte=6.5',
+        'discover/movie?with_genres=27&with_keywords=158718&sort_by=vote_average.desc&vote_count.gte=300&vote_average.gte=6',
+        'discover/movie?with_genres=27&with_keywords=288394|10541&sort_by=vote_average.desc&vote_count.gte=800&vote_average.gte=6.5'
     ];
 
-    function showFrightenModal(card) {
-        var poster_url = card.poster_path
-            ? L.TMDB.image('t/p/w500' + card.poster_path)
-            : './img/img_broken.svg';
-        var title = card.title || card.name || 'Без названия';
-        var year  = ((card.release_date || card.first_air_date || '') + '').slice(0, 4);
-        var rating = (card.vote_average || 0).toFixed(1);
-        var overview = (card.overview || 'Без описания.').slice(0, 600);
-        var genres = '';
-        if (card.genre_ids && L.TMDB.getGenresNameFromIds) {
-            try {
-                genres = L.TMDB.getGenresNameFromIds('movie', card.genre_ids).join(' · ');
-            } catch (e) {}
-        }
+    function buildFrightenHtml(card) {
+        var poster_src = card.poster_path
+            ? L.TMDB.image('t/p/w400' + card.poster_path)
+            : (card.img || './img/img_broken.svg');
+        var title = (card.title || card.name || 'Без названия')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        var year  = ((card.release_date || '') + '').slice(0, 4) || '----';
+        var vote  = card.vote_average ? parseFloat(card.vote_average).toFixed(1) : '—';
+        var overview = (card.overview || '').trim();
 
-        var html =
-            '<div class="horror-preview">' +
-              '<div class="horror-preview__poster"><img src="' + poster_url + '" onerror="this.src=\'./img/img_broken.svg\'"/></div>' +
-              '<div class="horror-preview__body">' +
-                '<div class="horror-preview__title">' + title + '</div>' +
-                '<div class="horror-preview__meta">' +
-                  (year ? '<span>' + year + '</span>' : '') +
-                  (rating && rating !== '0.0' ? '<span>★ ' + rating + '</span>' : '') +
-                  (genres ? '<span>' + genres + '</span>' : '') +
-                '</div>' +
-                '<div class="horror-preview__badge">Готов испугаться?</div>' +
-                '<div class="horror-preview__overview">' + overview + '</div>' +
+        var overview_html = overview
+            ? '<div class="hfm__overview">' + overview.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>'
+            : '<div class="hfm__overview" style="opacity:.55">Описание отсутствует</div>';
+
+        return $(
+            '<div class="hfm">' +
+              '<div class="hfm__poster">' +
+                '<img src="' + poster_src + '" onerror="this.src=\'./img/img_broken.svg\'">' +
               '</div>' +
-            '</div>';
+              '<div class="hfm__body">' +
+                '<div class="hfm__title">' + title + '</div>' +
+                '<div class="hfm__meta">' +
+                  '<span>📅 <b>' + year + '</b></span>' +
+                  '<span>★ <b>' + vote + '</b></span>' +
+                  '<span>🔞 <b>18+</b></span>' +
+                '</div>' +
+                overview_html +
+              '</div>' +
+            '</div>'
+        );
+    }
 
-        var prevController = L.Controller.enabled().name;
+    function showFrightenModal(card) {
+        var html = buildFrightenHtml(card);
+        var controller_name = L.Controller.enabled().name;
 
-        L.Modal.open({
-            title: 'Случайный ужастик',
-            html: $(html),
+        Modal.open({
+            title: '💀 Тебе попался...',
+            html: html,
             size: 'medium',
             buttons: [
                 {
-                    name: 'Смотреть',
+                    name: '🎲 Ещё раз',
                     onSelect: function () {
-                        L.Modal.close();
+                        Modal.close();
+                        setTimeout(frightenMe, 200);
+                    }
+                },
+                {
+                    name: '🎬 Смотреть',
+                    onSelect: function () {
+                        Modal.close();
                         L.Activity.push({
                             url: '',
                             component: 'full',
@@ -496,55 +537,65 @@
                     }
                 },
                 {
-                    name: 'Ещё раз',
+                    name: 'Закрыть',
                     onSelect: function () {
-                        L.Modal.close();
-                        setTimeout(frightenMe, 50);
-                    }
-                },
-                {
-                    name: 'Отмена',
-                    onSelect: function () {
-                        L.Modal.close();
-                        L.Controller.toggle(prevController);
+                        Modal.close();
+                        L.Controller.toggle(controller_name);
                     }
                 }
             ],
             onBack: function () {
-                L.Modal.close();
-                L.Controller.toggle(prevController);
+                Modal.close();
+                L.Controller.toggle(controller_name);
             }
         });
     }
 
-    var frighten_busy = false;
-
-    function frightenMe() {
-        if (frighten_busy) return;
-        frighten_busy = true;
-
-        L.Loading.start(function () {
-            frighten_busy = false;
-            L.Loading.stop();
+    function showFrightenLoadingModal() {
+        var html = $(
+            '<div class="hfm" style="flex-direction:column;align-items:center;justify-content:center">' +
+              '<div class="hfm__loading">' +
+                '<div class="hfm__loading-spinner"></div>' +
+                '<div>Ищу что-нибудь страшное...</div>' +
+              '</div>' +
+            '</div>'
+        );
+        var controller_name = L.Controller.enabled().name;
+        Modal.open({
+            title: '💀 Ищу...',
+            html: html,
+            size: 'medium',
+            onBack: function () {
+                Modal.close();
+                L.Controller.toggle(controller_name);
+            }
         });
+    }
 
-        var q = FRIGHTEN_QUERIES[Math.floor(Math.random() * FRIGHTEN_QUERIES.length)];
-        var filter = Object.assign({}, q, { page: Math.floor(Math.random() * 3) + 1 });
+    var frighten_running = false;
+    function frightenMe() {
+        if (frighten_running) return;
+        frighten_running = true;
 
-        tmdbGet('discover/movie', filter, function (data) {
-            L.Loading.stop();
-            frighten_busy = false;
+        showFrightenLoadingModal();
+
+        var query = FRIGHTEN_QUERIES[Math.floor(Math.random() * FRIGHTEN_QUERIES.length)];
+        var page  = Math.floor(Math.random() * 3) + 1;
+        var url   = tmdbUrl(query + '&page=' + page);
+
+        L.Network.silent(url, function (data) {
+            frighten_running = false;
 
             if (!data || !data.results || !data.results.length) {
-                L.Noty.show('Ничего не нашлось. Попробуйте ещё раз.');
+                Modal.close();
+                L.Noty.show('Ничего не нашлось. Попробуйте ещё раз.', { time: 4000 });
                 return;
             }
 
             var shown = L.Storage.get('horror_frighten_shown', []);
             if (!Array.isArray(shown)) shown = [];
-            var available = data.results.filter(function (m) {
-                return shown.indexOf(m.id) === -1;
-            });
+
+            var available = data.results.filter(function (m) { return shown.indexOf(m.id) === -1; });
             if (!available.length) { shown = []; available = data.results; }
 
             var pick = available[Math.floor(Math.random() * available.length)];
@@ -552,13 +603,51 @@
             if (shown.length > 100) shown = shown.slice(-100);
             L.Storage.set('horror_frighten_shown', shown);
 
-            showFrightenModal(pick);
-        }, function (e) {
-            L.Loading.stop();
-            frighten_busy = false;
-            console.error('[HorrorUnified] frightenMe error:', e);
-            L.Noty.show('Ошибка при поиске. Проверьте соединение.');
-        });
+            /* Обновляем содержимое модалки на карточку */
+            var card_html = buildFrightenHtml(pick);
+            Modal.update(card_html);
+
+            /* Меняем заголовок модалки */
+            try { Modal.title('💀 Тебе попался...'); } catch (e) {}
+
+            /* Перевешиваем кнопки — они задаются при открытии, поэтому
+               закрываем и открываем заново, чтобы кнопки были актуальны */
+            var controller_name = L.Controller.enabled().name;
+            setTimeout(function () {
+                Modal.close();
+                Modal.open({
+                    title: '💀 Тебе попался...',
+                    html: buildFrightenHtml(pick),
+                    size: 'medium',
+                    buttons: [
+                        { name: '🎲 Ещё раз', onSelect: function () {
+                            Modal.close();
+                            setTimeout(frightenMe, 200);
+                        }},
+                        { name: '🎬 Смотреть', onSelect: function () {
+                            Modal.close();
+                            L.Activity.push({
+                                url: '', component: 'full', id: pick.id,
+                                method: 'movie', card: pick, source: 'tmdb'
+                            });
+                        }},
+                        { name: 'Закрыть', onSelect: function () {
+                            Modal.close();
+                            L.Controller.toggle(controller_name);
+                        }}
+                    ],
+                    onBack: function () {
+                        Modal.close();
+                        L.Controller.toggle(controller_name);
+                    }
+                });
+            }, 50);
+
+        }, function () {
+            frighten_running = false;
+            Modal.close();
+            L.Noty.show('Ошибка при поиске. Проверьте соединение.', { time: 4000 });
+        }, false, { timeout: 15000 });
     }
 
     function buildFrightenButton() {
@@ -572,47 +661,40 @@
     /* ============================================================
      *  РЯДЫ
      * ============================================================ */
-    var rowsCache = { recomend: null, fresh: null, collections: null };
+    var rowsMemoryCache = { recomend: null, fresh: null, collections: null };
 
     function loadRecommendations(cb) {
-        if (rowsCache.recomend) return cb(rowsCache.recomend);
-        tmdbGet('discover/movie', {
-            with_genres: 27,
-            sort_by: 'vote_average.desc',
-            'vote_count.gte': 2000,
-            'vote_average.gte': 7,
-            page: 1
-        }, function (data) {
-            var list = (data.results || []).slice(0, 20);
-            rowsCache.recomend = list;
-            cb(list);
-        }, function () { cb([]); });
+        if (rowsMemoryCache.recomend) return cb(rowsMemoryCache.recomend);
+        tmdbRequest('discover/movie?with_genres=27&sort_by=vote_average.desc&vote_count.gte=2000&vote_average.gte=7&page=1',
+            function (data) {
+                var list = (data.results || []).slice(0, 20);
+                rowsMemoryCache.recomend = list;
+                cb(list);
+            }, function () { cb([]); });
     }
     function loadNewReleases(cb) {
-        if (rowsCache.fresh) return cb(rowsCache.fresh);
+        if (rowsMemoryCache.fresh) return cb(rowsMemoryCache.fresh);
         var today = new Date().toISOString().split('T')[0];
-        var yearAgo = new Date(Date.now() - 1000 * 60 * 60 * 24 * 365).toISOString().split('T')[0];
-        tmdbGet('discover/movie', {
-            with_genres: 27,
-            sort_by: 'primary_release_date.desc',
-            'primary_release_date.lte': today,
-            'primary_release_date.gte': yearAgo,
-            'vote_count.gte': 30,
-            page: 1
-        }, function (data) {
-            var list = (data.results || []).slice(0, 20);
-            rowsCache.fresh = list;
-            cb(list);
-        }, function () { cb([]); });
+        var year_ago = new Date(Date.now() - 1000 * 60 * 60 * 24 * 365).toISOString().split('T')[0];
+        tmdbRequest('discover/movie?with_genres=27&sort_by=primary_release_date.desc'
+            + '&primary_release_date.lte=' + today
+            + '&primary_release_date.gte=' + year_ago
+            + '&vote_count.gte=30&page=1',
+            function (data) {
+                var list = (data.results || []).slice(0, 20);
+                rowsMemoryCache.fresh = list;
+                cb(list);
+            }, function () { cb([]); });
     }
     function loadCollections(cb) {
-        if (rowsCache.collections) return cb(rowsCache.collections);
+        if (rowsMemoryCache.collections) return cb(rowsMemoryCache.collections);
 
         var cached = L.Storage.get('horror_collections_cache', {});
+        if (!cached || typeof cached !== 'object') cached = {};
         var now = Date.now();
         var TTL = 1000 * 60 * 60 * 24 * 7;
-        var toFetch = [];
         var result = [];
+        var toFetch = [];
 
         COLLECTIONS.forEach(function (col, i) {
             var key = 'col_' + i;
@@ -621,8 +703,6 @@
                     id: 'horror_col_' + i,
                     title: col.title,
                     poster_path: cached[key].poster_path,
-                    release_date: '',
-                    vote_average: 0,
                     is_horror_collection: true,
                     horror_keywords: col.keywords,
                     overview: (cached[key].count || 0) + ' фильмов'
@@ -634,51 +714,41 @@
 
         if (!toFetch.length) {
             var clean = result.filter(Boolean);
-            rowsCache.collections = clean;
+            rowsMemoryCache.collections = clean;
             return cb(clean);
         }
 
         var pending = toFetch.length;
+        var done = function () {
+            if (--pending > 0) return;
+            L.Storage.set('horror_collections_cache', cached);
+            var clean = result.filter(Boolean);
+            rowsMemoryCache.collections = clean;
+            cb(clean);
+        };
+
         toFetch.forEach(function (item) {
-            tmdbGet('discover/movie', {
-                with_genres: 27,
-                with_keywords: item.col.keywords,
-                sort_by: 'vote_average.desc',
-                'vote_count.gte': 100,
-                page: 1
-            }, function (data) {
-                var first = data.results && data.results[0];
-                if (first) {
-                    result[item.idx] = {
-                        id: 'horror_col_' + item.idx,
-                        title: item.col.title,
-                        poster_path: first.poster_path,
-                        release_date: '',
-                        vote_average: 0,
-                        is_horror_collection: true,
-                        horror_keywords: item.col.keywords,
-                        overview: (data.total_results || 0) + ' фильмов'
-                    };
-                    cached[item.key] = {
-                        time: now,
-                        poster_path: first.poster_path,
-                        count: data.total_results || 0
-                    };
-                }
-                if (--pending === 0) {
-                    L.Storage.set('horror_collections_cache', cached);
-                    var clean = result.filter(Boolean);
-                    rowsCache.collections = clean;
-                    cb(clean);
-                }
-            }, function () {
-                if (--pending === 0) {
-                    L.Storage.set('horror_collections_cache', cached);
-                    var clean = result.filter(Boolean);
-                    rowsCache.collections = clean;
-                    cb(clean);
-                }
-            });
+            tmdbRequest('discover/movie?with_genres=27&with_keywords=' + item.col.keywords
+                + '&sort_by=vote_average.desc&vote_count.gte=100&page=1',
+                function (data) {
+                    var first = data.results && data.results[0];
+                    if (first) {
+                        result[item.idx] = {
+                            id: 'horror_col_' + item.idx,
+                            title: item.col.title,
+                            poster_path: first.poster_path,
+                            is_horror_collection: true,
+                            horror_keywords: item.col.keywords,
+                            overview: (data.total_results || 0) + ' фильмов'
+                        };
+                        cached[item.key] = {
+                            time: now,
+                            poster_path: first.poster_path,
+                            count: data.total_results || 0
+                        };
+                    }
+                    done();
+                }, done);
         });
     }
 
@@ -693,44 +763,38 @@
             return;
         }
         L.Activity.push({
-            url: '',
-            component: 'full',
+            url: '', component: 'full',
             id: card_data.id,
             method: card_data.name ? 'tv' : 'movie',
-            card: card_data,
-            source: 'tmdb'
+            card: card_data, source: 'tmdb'
         });
     }
 
     function createRow(title, results, opts) {
         opts = opts || {};
-        if (!results || !results.length) return null;
-        try {
-            var data = {
-                title: title,
-                results: results,
-                params: {
-                    items: { view: 7, mapping: 'line', align_left: false },
-                    scroll: { horizontal: true, step: 300 }
-                }
-            };
-            var line = L.Maker.make('Line', data);
-            line.use({
-                onInstance: function (card, card_data) {
-                    card.use({
-                        onEnter: function () { openCardFromRow(card_data); },
-                        onFocus: function () {
-                            L.Background.change(L.Utils.cardImgBackground(card_data));
-                        }
-                    });
-                }
-            });
-            line.create();
-            return line.render(true);
-        } catch (e) {
-            console.error('[HorrorUnified] createRow "' + title + '" error:', e, e.stack);
+        var data = {
+            title: title,
+            results: results,
+            params: {
+                items: { view: 7, mapping: 'line', align_left: false },
+                scroll: { horizontal: true, step: 300 }
+            }
+        };
+        var line = L.Maker.make('Line', data);
+        line.use({
+            onInstance: function (card, card_data) {
+                card.use({
+                    onEnter: function () { openCardFromRow(card_data); },
+                    onFocus: function () { L.Background.change(L.Utils.cardImgBackground(card_data)); }
+                });
+            },
+            onMore: opts.onMore || function () {}
+        });
+        try { line.create(); } catch (e) {
+            console.error('[HorrorUnified] Line create error:', e);
             return null;
         }
+        return line.render(true);
     }
 
     function buildRowsContainer() {
@@ -745,34 +809,26 @@
         container.appendChild(slotCol);
 
         loadRecommendations(function (list) {
-            console.log('[HorrorUnified] recomendations loaded:', list.length);
-            if (!list.length) { slotRec.style.minHeight = '0'; return; }
+            if (!list.length) return;
             var row = createRow('Рекомендуем посмотреть', list);
             if (row) { slotRec.appendChild(row); L.Layer.update(); }
-            else slotRec.style.minHeight = '0';
         });
-
         loadNewReleases(function (list) {
-            console.log('[HorrorUnified] new releases loaded:', list.length);
-            if (!list.length) { slotNew.style.minHeight = '0'; return; }
+            if (!list.length) return;
             var row = createRow('Новые ужасы', list);
             if (row) { slotNew.appendChild(row); L.Layer.update(); }
-            else slotNew.style.minHeight = '0';
         });
-
         loadCollections(function (list) {
-            console.log('[HorrorUnified] collections loaded:', list.length);
-            if (!list.length) { slotCol.style.minHeight = '0'; return; }
+            if (!list.length) return;
             var row = createRow('Подборки', list);
             if (row) { slotCol.appendChild(row); L.Layer.update(); }
-            else slotCol.style.minHeight = '0';
         });
 
         return container;
     }
 
     /* ============================================================
-     *  ПАНЕЛЬ ФИЛЬТРОВ
+     *  ФИЛЬТРЫ
      * ============================================================ */
     function openGenreFilter(onChange) {
         var items = GENRES.map(function (g) {
@@ -902,7 +958,7 @@
     }
 
     /* ============================================================
-     *  КОМПОНЕНТ
+     *  КОМПОНЕНТ РАЗДЕЛА
      * ============================================================ */
     function HorrorComponent(object) {
         injectStyles();
@@ -921,18 +977,28 @@
 
                 topSection = document.createElement('div');
                 topSection.className = 'horror-top-section';
-
                 topSection.appendChild(buildFiltersBar(function () {
                     L.Activity.replace(buildActivityObject());
                 }));
                 topSection.appendChild(buildFrightenButton());
                 topSection.appendChild(buildRowsContainer());
 
-                var body = this.scroll.body(true);
-                if (body.firstChild) body.insertBefore(topSection, body.firstChild);
-                else body.appendChild(topSection);
+                /* ГЛАВНЫЙ ФИКС: вставляем в this.body (это grid-контейнер),
+                   а не в scroll.body() — иначе topSection не попадёт в grid-раскладку */
+                var body = this.body && this.body[0] ? this.body[0] : this.body;
+                if (body && body.nodeType === 1) {
+                    if (body.firstChild) body.insertBefore(topSection, body.firstChild);
+                    else body.appendChild(topSection);
+                } else {
+                    console.warn('[HorrorUnified] this.body не найден, использую scroll.body()');
+                    var sbody = this.scroll.body(true);
+                    if (sbody.firstChild) sbody.insertBefore(topSection, sbody.firstChild);
+                    else sbody.appendChild(topSection);
+                }
 
-                requestAnimationFrame(function () { L.Layer.update(self.html); });
+                requestAnimationFrame(function () {
+                    try { L.Layer.update(self.html); } catch (e) {}
+                });
             },
             onNext: function (resolve, reject) {
                 L.Api.list(object, resolve.bind(this), reject.bind(this));
@@ -1100,12 +1166,8 @@
             });
 
             if (L.Noty && L.Noty.show) {
-                L.Noty.show('Хоррор v' + VERSION + ' загружен. Настройки — «Настройки → Хоррор».',
-                            { time: 4000 });
+                L.Noty.show('Хоррор v' + VERSION + ' загружен.', { time: 3000 });
             }
-
-            console.log('[HorrorUnified] Готов. Тем:', CARD_THEMES.length,
-                        '| Оверлеев:', ALL_FX_TOKENS.split(' ').length);
         } catch (e) {
             console.error('[HorrorUnified] Boot error:', e);
         }
