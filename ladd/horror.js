@@ -1,20 +1,12 @@
 /* ============================================================
- *  HORROR UNIFIED v4.1 for Lampa 3.3.x
+ *  HORROR UNIFIED v4.2 for Lampa 3.3.x
  *
- *  ИСПРАВЛЕНИЯ v4.1:
- *   - Все запросы к TMDB теперь с api_key (главный баг v4.0)
- *   - TopSection вставляется в this.body (grid) как grid-column: 1/-1
- *   - «Испугай меня» показывает модалку с постером и кнопками
- *
- *  ФУНКЦИИ:
- *   1. Раздел «Ужасы» в меню
- *   2. Кнопка «Испугай меня» (модалка со случайным фильмом)
- *   3. Ряд «Рекомендуем посмотреть»
- *   4. Ряд «Новые ужасы»
- *   5. Ряд «Подборки»
- *   6. Сетка отфильтрованных фильмов
- *   7. Расширенные фильтры
- *   8. Темы карточек и оверлей-эффекты — только на странице «Ужасы»
+ *  ИСПРАВЛЕНИЯ v4.2 (относительно v4.1):
+ *   - frightenMe: controller_name захватывается ДО открытия модалок
+ *   - frightenMe: убран бессмысленный Modal.update/close/open через 50мс
+ *   - showFrightenModal удалён (был мёртвый код)
+ *   - onDestroy чистка modal_ref
+ *   - мелочи по таймингам
  * ============================================================ */
 (function () {
     'use strict';
@@ -25,7 +17,7 @@
     if (!window.Lampa) { console.error('[HorrorUnified] Lampa не найдена'); return; }
 
     var L = window.Lampa;
-    var VERSION = '4.1.0';
+    var VERSION = '4.2.0';
     var COMPONENT = 'horror';
     var TITLE = 'Ужасы';
     var DEFAULT_GENRE = '27|53';
@@ -113,7 +105,7 @@
     var studioLogosCache = {};
 
     /* ============================================================
-     *  ГЛАВНЫЙ ФИКС: правильный URL к TMDB с api_key
+     *  TMDB
      * ============================================================ */
     function tmdbUrl(path_query) {
         var lang = L.Storage.field('tmdb_lang') || 'ru';
@@ -189,10 +181,8 @@
         var style = document.createElement('style');
         style.id = 'horror-unified-styles';
         style.textContent = [
-            /* Top section fills full grid width */
             '.horror-top-section{grid-column:1 / -1;width:100%;box-sizing:border-box;padding:0 0 1.2em 0;position:relative;z-index:1}',
 
-            /* Filters */
             '.horror-filters{display:flex;align-items:center;gap:.5em;flex-wrap:wrap;',
             'padding:.6em .8em;margin:0 0 1em 0;background:rgba(0,0,0,.35);border-radius:1.2em;',
             'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);',
@@ -210,7 +200,6 @@
             '.horror-studio-item .selectbox-item__icon img{height:1.6em;width:auto;max-width:6em;object-fit:contain}',
             '.horror-studio-item .selectbox-item__icon{background:transparent!important;padding:.2em}',
 
-            /* Frighten button */
             '.horror-frighten-btn{display:flex;align-items:center;justify-content:center;gap:1em;',
             'padding:1.15em 2em;margin:0 0 1.5em 0;',
             'background:linear-gradient(135deg,#4a0000 0%,#8b0000 25%,#dc143c 50%,#8b0000 75%,#4a0000 100%);',
@@ -231,12 +220,10 @@
             '50%{box-shadow:0 0 55px rgba(255,30,60,.75), inset 0 0 30px rgba(255,50,50,.25)}}',
             '@keyframes hfx-frighten-gradient{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}',
 
-            /* Rows */
             '.horror-rows{width:100%}',
             '.horror-row-slot{width:100%}',
             '.horror-row-slot .items-line{padding:0;margin:0 0 1.2em 0}',
 
-            /* Frighten modal */
             '.hfm{display:flex;gap:1.2em;padding:0 0 .5em 0;min-height:200px}',
             '.hfm__poster{flex:0 0 220px;max-width:220px}',
             '.hfm__poster img{width:100%;border-radius:.6em;box-shadow:0 0 30px rgba(180,0,0,.5)}',
@@ -253,7 +240,6 @@
             'border-top-color:#dc143c;border-radius:50%;animation:hfm-spin 1s linear infinite}',
             '@keyframes hfm-spin{to{transform:rotate(360deg)}}',
 
-            /* Overlay effects layer */
             '.horror-fx-layer{position:fixed;inset:0;pointer-events:none;display:none;z-index:90;overflow:hidden}',
             'body.horror-page .horror-fx-layer{display:block}',
             '.horror-fx-layer > *{position:absolute;inset:0;pointer-events:none}',
@@ -463,7 +449,7 @@
     }
 
     /* ============================================================
-     *  «ИСПУГАЙ МЕНЯ» — модалка со случайным фильмом
+     *  «ИСПУГАЙ МЕНЯ»
      * ============================================================ */
     var FRIGHTEN_QUERIES = [
         'discover/movie?with_genres=27&sort_by=vote_average.desc&vote_count.gte=3000&vote_average.gte=7.2',
@@ -506,50 +492,8 @@
         );
     }
 
-    function showFrightenModal(card) {
-        var html = buildFrightenHtml(card);
-        var controller_name = L.Controller.enabled().name;
-
-        Modal.open({
-            title: '💀 Тебе попался...',
-            html: html,
-            size: 'medium',
-            buttons: [
-                {
-                    name: '🎲 Ещё раз',
-                    onSelect: function () {
-                        Modal.close();
-                        setTimeout(frightenMe, 200);
-                    }
-                },
-                {
-                    name: '🎬 Смотреть',
-                    onSelect: function () {
-                        Modal.close();
-                        L.Activity.push({
-                            url: '',
-                            component: 'full',
-                            id: card.id,
-                            method: 'movie',
-                            card: card,
-                            source: 'tmdb'
-                        });
-                    }
-                },
-                {
-                    name: 'Закрыть',
-                    onSelect: function () {
-                        Modal.close();
-                        L.Controller.toggle(controller_name);
-                    }
-                }
-            ],
-            onBack: function () {
-                Modal.close();
-                L.Controller.toggle(controller_name);
-            }
-        });
-    }
+    var frighten_running = false;
+    var frighten_controller_name = null;   // FIX v4.2: запоминаем контроллер ДО открытия модалок
 
     function showFrightenLoadingModal() {
         var html = $(
@@ -560,22 +504,24 @@
               '</div>' +
             '</div>'
         );
-        var controller_name = L.Controller.enabled().name;
         Modal.open({
             title: '💀 Ищу...',
             html: html,
             size: 'medium',
             onBack: function () {
                 Modal.close();
-                L.Controller.toggle(controller_name);
+                if (frighten_controller_name) L.Controller.toggle(frighten_controller_name);
             }
         });
     }
 
-    var frighten_running = false;
     function frightenMe() {
         if (frighten_running) return;
         frighten_running = true;
+
+        // FIX v4.2: захватываем "родительский" контроллер ДО открытия loading-модалки,
+        // иначе получим 'modal' и после закрытия результирующей модалки попадём в никуда.
+        frighten_controller_name = L.Controller.enabled().name;
 
         showFrightenLoadingModal();
 
@@ -588,6 +534,7 @@
 
             if (!data || !data.results || !data.results.length) {
                 Modal.close();
+                if (frighten_controller_name) L.Controller.toggle(frighten_controller_name);
                 L.Noty.show('Ничего не нашлось. Попробуйте ещё раз.', { time: 4000 });
                 return;
             }
@@ -603,49 +550,39 @@
             if (shown.length > 100) shown = shown.slice(-100);
             L.Storage.set('horror_frighten_shown', shown);
 
-            /* Обновляем содержимое модалки на карточку */
-            var card_html = buildFrightenHtml(pick);
-            Modal.update(card_html);
-
-            /* Меняем заголовок модалки */
-            try { Modal.title('💀 Тебе попался...'); } catch (e) {}
-
-            /* Перевешиваем кнопки — они задаются при открытии, поэтому
-               закрываем и открываем заново, чтобы кнопки были актуальны */
-            var controller_name = L.Controller.enabled().name;
-            setTimeout(function () {
-                Modal.close();
-                Modal.open({
-                    title: '💀 Тебе попался...',
-                    html: buildFrightenHtml(pick),
-                    size: 'medium',
-                    buttons: [
-                        { name: '🎲 Ещё раз', onSelect: function () {
-                            Modal.close();
-                            setTimeout(frightenMe, 200);
-                        }},
-                        { name: '🎬 Смотреть', onSelect: function () {
-                            Modal.close();
-                            L.Activity.push({
-                                url: '', component: 'full', id: pick.id,
-                                method: 'movie', card: pick, source: 'tmdb'
-                            });
-                        }},
-                        { name: 'Закрыть', onSelect: function () {
-                            Modal.close();
-                            L.Controller.toggle(controller_name);
-                        }}
-                    ],
-                    onBack: function () {
+            // FIX v4.2: убрали бессмысленный Modal.update + повторный close/open через 50мс.
+            // Просто закрываем loading-модалку и открываем сразу результирующую.
+            Modal.close();
+            Modal.open({
+                title: '💀 Тебе попался...',
+                html: buildFrightenHtml(pick),
+                size: 'medium',
+                buttons: [
+                    { name: '🎲 Ещё раз', onSelect: function () {
                         Modal.close();
-                        L.Controller.toggle(controller_name);
-                    }
-                });
-            }, 50);
-
+                        setTimeout(frightenMe, 200);
+                    }},
+                    { name: '🎬 Смотреть', onSelect: function () {
+                        Modal.close();
+                        L.Activity.push({
+                            url: '', component: 'full', id: pick.id,
+                            method: 'movie', card: pick, source: 'tmdb'
+                        });
+                    }},
+                    { name: 'Закрыть', onSelect: function () {
+                        Modal.close();
+                        if (frighten_controller_name) L.Controller.toggle(frighten_controller_name);
+                    }}
+                ],
+                onBack: function () {
+                    Modal.close();
+                    if (frighten_controller_name) L.Controller.toggle(frighten_controller_name);
+                }
+            });
         }, function () {
             frighten_running = false;
             Modal.close();
+            if (frighten_controller_name) L.Controller.toggle(frighten_controller_name);
             L.Noty.show('Ошибка при поиске. Проверьте соединение.', { time: 4000 });
         }, false, { timeout: 15000 });
     }
@@ -808,20 +745,40 @@
         container.appendChild(slotNew);
         container.appendChild(slotCol);
 
+        // Счётчик завершённых запросов — чтобы Layer.update вызывался один раз
+        var pending = 3;
+        var tryUpdate = function () {
+            if (--pending === 0) {
+                try { L.Layer.update(); } catch (e) {}
+            }
+        };
+
         loadRecommendations(function (list) {
-            if (!list.length) return;
-            var row = createRow('Рекомендуем посмотреть', list);
-            if (row) { slotRec.appendChild(row); L.Layer.update(); }
+            if (list.length) {
+                var row = createRow('Рекомендуем посмотреть', list);
+                if (row) slotRec.appendChild(row);
+            } else {
+                slotRec.style.display = 'none';
+            }
+            tryUpdate();
         });
         loadNewReleases(function (list) {
-            if (!list.length) return;
-            var row = createRow('Новые ужасы', list);
-            if (row) { slotNew.appendChild(row); L.Layer.update(); }
+            if (list.length) {
+                var row = createRow('Новые ужасы', list);
+                if (row) slotNew.appendChild(row);
+            } else {
+                slotNew.style.display = 'none';
+            }
+            tryUpdate();
         });
         loadCollections(function (list) {
-            if (!list.length) return;
-            var row = createRow('Подборки', list);
-            if (row) { slotCol.appendChild(row); L.Layer.update(); }
+            if (list.length) {
+                var row = createRow('Подборки', list);
+                if (row) slotCol.appendChild(row);
+            } else {
+                slotCol.style.display = 'none';
+            }
+            tryUpdate();
         });
 
         return container;
@@ -884,7 +841,9 @@
             var v = (value || '').trim();
             var changed = v !== horror_state.searchQuery;
             horror_state.searchQuery = v;
-            L.Controller.toggle(prev);
+            // Input.edit всегда возвращает нас на 'settings_component',
+            // поэтому переключаемся обратно на исходный контроллер
+            if (prev && prev !== 'settings_component') L.Controller.toggle(prev);
             if (changed) onChange();
         });
     }
@@ -983,17 +942,15 @@
                 topSection.appendChild(buildFrightenButton());
                 topSection.appendChild(buildRowsContainer());
 
-                /* ГЛАВНЫЙ ФИКС: вставляем в this.body (это grid-контейнер),
-                   а не в scroll.body() — иначе topSection не попадёт в grid-раскладку */
-                var body = this.body && this.body[0] ? this.body[0] : this.body;
+                // this.body — DOM-элемент (Base создаёт его через document.createElement).
+                // Вставляем в него topSection как первый child — тогда grid-column:1/-1 работает.
+                var body = (this.body && this.body.nodeType === 1) ? this.body
+                         : (this.scroll && this.scroll.body ? this.scroll.body(true) : null);
                 if (body && body.nodeType === 1) {
                     if (body.firstChild) body.insertBefore(topSection, body.firstChild);
                     else body.appendChild(topSection);
                 } else {
-                    console.warn('[HorrorUnified] this.body не найден, использую scroll.body()');
-                    var sbody = this.scroll.body(true);
-                    if (sbody.firstChild) sbody.insertBefore(topSection, sbody.firstChild);
-                    else sbody.appendChild(topSection);
+                    console.warn('[HorrorUnified] this.body не найден');
                 }
 
                 requestAnimationFrame(function () {
